@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Edytor krzywych RL90</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #111; color: #eee;
+    font-family: monospace;
+    display: flex; justify-content: center;
+    padding: 12px;
+  }
+  #app { width: 100%; max-width: 480px; display: flex; flex-direction: column; gap: 10px; }
+
+  /* Wybór kanału */
+  #ch-row { display: flex; gap: 8px; }
+  .btn-ch {
+    flex: 1; padding: 9px 0;
+    background: #1a1a1a; border: 1px solid #2a2a2a;
+    color: #555; font-family: monospace; font-size: 14px;
+    cursor: pointer; touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .btn-ch.active { color: var(--c); border-color: var(--c); }
+
+  #chart-area { background: #1a1a1a; border: 1px solid #333; }
+  canvas { display: block; width: 100%; touch-action: none; }
+
+  #carriage-track {
+    position: relative; background: #1a1a1a;
+    border: 1px solid #333; height: 48px; overflow: hidden;
+  }
+  #track-hint {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%,-50%);
+    font-size: 11px; color: #2a2a2a; pointer-events: none;
+  }
+  #carriage {
+    position: absolute; top: 6px; width: 76px; height: 36px;
+    background: #1e1e10; border: 1px solid #f80;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; color: #f80;
+    cursor: grab; user-select: none; touch-action: none;
+  }
+  #carriage.dragging { cursor: grabbing; }
+
+  #controls { display: flex; gap: 10px; }
+  #info-box {
+    flex: 1; background: #1a1a1a; border: 1px solid #333;
+    padding: 10px 14px; display: flex; flex-direction: column; gap: 2px;
+  }
+  .btn-sm {
+    margin-top: 6px; padding: 7px 0; width: 100%;
+    background: #111; border: 1px solid #333;
+    color: #555; font-family: monospace; font-size: 12px;
+    cursor: pointer; touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .btn-sm.active { border-color: #f80; color: #f80; }
+  #info-mode { font-size: 10px; color: #666; margin-bottom: 2px; }
+  #info-mode.snapped { color: #6af; }
+  #info-mode.warn { color: #f44; }
+  #info-time { font-size: 20px; color: #ccc; }
+  #info-value { font-size: 30px; font-weight: bold; line-height: 1.1; color: var(--c); }
+  #info-pts { font-size: 10px; color: #555; margin-top: 4px; }
+
+  #btn-col { display: flex; flex-direction: column; gap: 10px; }
+  .btn-ud {
+    width: 68px; flex: 1;
+    background: #1a1a1a; border: 1px solid #444;
+    color: #ccc; font-size: 22px;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 1px;
+    cursor: pointer; touch-action: manipulation;
+    user-select: none; -webkit-tap-highlight-color: transparent;
+  }
+  .btn-ud span.hint { font-size: 9px; color: #555; line-height: 1; }
+  .btn-ud:active { background: #222; border-color: #6af; }
+  #btn-del { color: #555; }
+  #btn-del.active-del { border-color: #f44; color: #f44; }
+
+  #eps-row { display: flex; gap: 8px; align-items: center; }
+  #eps-row label { font-size: 11px; color: #555; white-space: nowrap; }
+  .btn-eps {
+    flex: 1; padding: 8px 0;
+    background: #1a1a1a; border: 1px solid #2a2a2a;
+    color: #555; font-family: monospace; font-size: 12px;
+    cursor: pointer; touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .btn-eps.active { border-color: #a60; color: #a60; }
+
+  #tools { display: flex; gap: 8px; }
+  #tools .btn-sm { margin-top: 0; }
+  #export {
+    display: none; width: 100%; height: 140px;
+    background: #1a1a1a; color: #999; border: 1px solid #333;
+    font-family: monospace; font-size: 11px; padding: 6px;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div id="ch-row"></div>
+
+  <div id="chart-area"><canvas id="curve-canvas"></canvas></div>
+
+  <div id="carriage-track">
+    <span id="track-hint">← przeciągnij karetkę →</span>
+    <div id="carriage"><span id="car-label">12:00</span></div>
+  </div>
+
+  <div id="controls">
+    <div id="btn-del-col">
+      <div class="btn-ud" id="btn-del">✕<span class="hint">usuń</span></div>
+    </div>
+    <div id="info-box">
+      <div id="info-mode">○ interpolacja</div>
+      <div id="info-time">--:--</div>
+      <div id="info-value">--%</div>
+      <div id="info-pts">punktów: 0</div>
+      <button class="btn-sm" id="btn-view">⊡ okno aktywne</button>
+      <button class="btn-sm" id="btn-fine">krok: 2% / 20%</button>
+    </div>
+    <div id="btn-col">
+      <div class="btn-ud" id="btn-up">▲<span class="hint" id="hint-up"></span></div>
+      <div class="btn-ud" id="btn-down">▼<span class="hint" id="hint-down"></span></div>
+    </div>
+  </div>
+
+  <div id="eps-row">
+    <label>RDP ε</label>
+    <button class="btn-eps" data-eps="0.5">0,5%</button>
+    <button class="btn-eps active" data-eps="3">3%</button>
+    <button class="btn-eps" data-eps="5">5%</button>
+    <button class="btn-eps" data-eps="10">10%</button>
+  </div>
+
+  <div id="tools">
+    <button class="btn-sm" id="btn-json">eksport JSON</button>
+    <button class="btn-sm" id="btn-vec">wektor testowy</button>
+  </div>
+  <textarea id="export" readonly></textarea>
+
+</div>
+
+<script>
+// ─── STAŁE ────────────────────────────────────────────────────────────────────
+// Wszystkie wartości v w jednostkach % "postrzeganych" (0–100), zaokrąglone do 0,01
+// (w firmware: uint16 w setnych procenta, 0–10000). Gamma i min. wypełnienie
+// stosuje firmware, nie GUI.
+const DAY_MIN       = 1440;
+const MAX_POINTS    = 48;     // z punktami krańcowymi, na kanał
+const STEP_NORMAL   = 2;      // % — krok normalny
+const STEP_LONG     = 20;     // % — krok long-press
+const STEP_FINE     = 0.1;    // % — tryb dokładny (zakres "księżyca")
+const STEP_FINE_LONG= 1;
+const LONG_PRESS_MS = 200;    // ms — do potwierdzenia (dokumentacja: 200, stary prototyp: 2000)
+const SNAP_TOL      = 8;      // min
+const RDP_WIN       = 90;     // min — okno lokalnego cleanup
+const MERGE_MIN     = 2;      // min — scalanie punktów bliższych niż to
+
+// Kolory: C (5 stringów niebieskich) = niebieski; A/B/D = do ustalenia po mapowaniu G/W/M
+const CHANNELS = [
+  { name: 'A', color: '#7d7', points: [{t:0,v:0},{t:DAY_MIN,v:0}] },
+  { name: 'B', color: '#eee', points: [{t:0,v:0},{t:DAY_MIN,v:0}] },
+  { name: 'C', color: '#6af', points: [{t:0,v:0},{t:DAY_MIN,v:0}] },
+  { name: 'D', color: '#c6f', points: [{t:0,v:0},{t:DAY_MIN,v:0}] },
+];
+// Przykład startowy dla kanału C
+CHANNELS[2].points = [
+  {t:0,v:0},{t:360,v:0},{t:420,v:10},{t:720,v:90},{t:840,v:80},{t:1080,v:10},{t:1140,v:0},{t:DAY_MIN,v:0},
+];
+
+let cur = 2;                 // aktywny kanał
+let carriageMinutes = 720;
+let epsilonRDP = 3;
+let fineMode = false;
+let viewMode = 'full', viewStart = 0, viewEnd = DAY_MIN;
+
+const ch  = () => CHANNELS[cur];
+const pts = () => CHANNELS[cur].points;
+const round2 = x => Math.round(x * 100) / 100;
+const clampV = x => Math.max(0, Math.min(100, x));
+
+// ─── AKIMA SPLINE ─────────────────────────────────────────────────────────────
+// Kanoniczna definicja — port C++ musi dawać ten sam wynik (patrz docs/CURVE_EDITOR_IMPLEMENTATION.md).
+// Nachylenia segmentów d[0..n-2], rozszerzone o 2 wirtualne z każdej strony:
+//   s[k+2] = d[k];  s[1] = 2 s[2] − s[3];  s[0] = 2 s[1] − s[2];   (i analogicznie z prawej)
+// Tangenta węzła i:  w1 = |s[i+3]−s[i+2]|, w2 = |s[i+1]−s[i]|
+//   m[i] = (w1·s[i+1] + w2·s[i+2]) / (w1+w2),  a gdy w1+w2≈0:  (s[i+1]+s[i+2]) / 2
+// Korekta względem czystej Akimy (czysta przestrzeliwuje na długich odcinkach, np. −8% przed świtem,
+// 6,9% w południe przy punkcie księżyca 0,5%): m=0 w ekstremach lokalnych i przy odcinkach płaskich,
+// na krańcach m = nachylenie sąsiedniego odcinka. Wynik nie wychodzi poza zakres punktów.
+function computeSpline(src) {
+  const p = [];
+  for (const q of src) {
+    if (p.length === 0 || q.t - p[p.length-1].t >= MERGE_MIN) p.push({ t: q.t, v: q.v });
+  }
+  const n = p.length;
+  if (n < 2) return null;
+
+  const d = new Array(n - 1);
+  for (let i = 0; i < n - 1; i++) {
+    const dt = p[i+1].t - p[i].t;
+    d[i] = dt < 1e-9 ? 0 : (p[i+1].v - p[i].v) / dt;
+  }
+
+  const m = new Array(n);
+  if (n === 2) {                       // jeden segment: prosta
+    m[0] = m[1] = d[0];
+    return { pts: p, m };
+  }
+
+  const s = new Array(n + 3);
+  for (let k = 0; k < n - 1; k++) s[k + 2] = d[k];
+  s[1]     = 2 * s[2]     - s[3];
+  s[0]     = 2 * s[1]     - s[2];
+  s[n + 1] = 2 * s[n]     - s[n - 1];
+  s[n + 2] = 2 * s[n + 1] - s[n];
+
+  for (let i = 0; i < n; i++) {
+    const w1 = Math.abs(s[i+3] - s[i+2]);
+    const w2 = Math.abs(s[i+1] - s[i]);
+    const ws = w1 + w2;
+    let a = ws < 1e-10 ? (s[i+1] + s[i+2]) / 2 : (w1 * s[i+1] + w2 * s[i+2]) / ws;
+    if (i === 0)          a = d[0];                       // krańce: styczna = sieczna
+    else if (i === n - 1) a = d[n - 2];
+    else if (d[i-1] * d[i] <= 0) a = 0;                   // ekstremum lokalne lub odcinek płaski
+    m[i] = isFinite(a) ? a : 0;
+  }
+  return { pts: p, m };
+}
+
+function evalSpline(spl, t) {
+  if (!spl) return 0;
+  const { pts: p, m } = spl;
+  const n = p.length;
+  if (t <= p[0].t)   return p[0].v;
+  if (t >= p[n-1].t) return p[n-1].v;
+
+  let lo = 0, hi = n - 1;
+  while (hi - lo > 1) { const mid = (lo + hi) >> 1; p[mid].t <= t ? lo = mid : hi = mid; }
+
+  const h = p[hi].t - p[lo].t;
+  if (h < 1e-9) return p[lo].v;
+  const x = (t - p[lo].t) / h, x2 = x*x, x3 = x2*x;
+
+  const v = (2*x3 - 3*x2 + 1) * p[lo].v
+          + (x3 - 2*x2 + x)   * h * m[lo]
+          + (-2*x3 + 3*x2)    * p[hi].v
+          + (x3 - x2)         * h * m[hi];
+  return isFinite(v) ? v : p[lo].v + (p[hi].v - p[lo].v) * x;   // fallback: liniowo
+}
+
+// cache splajnów per kanał
+const splines = CHANNELS.map(() => null);
+const rebuild = (i = cur) => { splines[i] = computeSpline(CHANNELS[i].points); };
+const getPWM = (t, i = cur) => clampV(evalSpline(splines[i], t));
+
+// ─── WIDOK ────────────────────────────────────────────────────────────────────
+function getActiveWindow() {
+  const zeros = pts().filter(p => p.t > 0 && p.t < DAY_MIN && p.v === 0);
+  return zeros.length < 2 ? null : { start: zeros[0].t, end: zeros[zeros.length-1].t };
+}
+function toggleView() {
+  const btn = document.getElementById('btn-view');
+  if (viewMode === 'full') {
+    const w = getActiveWindow();
+    if (!w) return;
+    viewStart = w.start; viewEnd = w.end; viewMode = 'active';
+    btn.textContent = '⊞ cała doba'; btn.classList.add('active');
+  } else {
+    viewStart = 0; viewEnd = DAY_MIN; viewMode = 'full';
+    btn.textContent = '⊡ okno aktywne'; btn.classList.remove('active');
+  }
+  carriageMinutes = Math.max(viewStart, Math.min(viewEnd, carriageMinutes));
+  updateAll();
+}
+
+// ─── LOKALNY CLEANUP (RDP) ────────────────────────────────────────────────────
+function localCleanup(centerT, protectedT) {
+  const P = pts();
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (let i = 1; i < P.length - 1; i++) {
+      const p = P[i];
+      if (Math.abs(p.t - centerT) > RDP_WIN) continue;
+      if (protectedT !== undefined && Math.abs(p.t - protectedT) <= SNAP_TOL) continue;
+      const test = computeSpline([...P.slice(0, i), ...P.slice(i + 1)]);
+      if (Math.abs(evalSpline(test, p.t) - p.v) <= epsilonRDP) {
+        P.splice(i, 1);
+        rebuild();
+        changed = true;
+        break;
+      }
+    }
+  }
+}
+
+// ─── EDYCJA ───────────────────────────────────────────────────────────────────
+function findNearbyIdx(t) {
+  const P = pts();
+  for (let i = 1; i < P.length - 1; i++) if (Math.abs(P[i].t - t) <= SNAP_TOL) return i;
+  return null;
+}
+
+function flashWarn(msg) {
+  const el = document.getElementById('info-mode');
+  el.textContent = msg; el.className = 'warn';
+  setTimeout(updateInfo, 1500);
+}
+
+function changeValue(delta) {
+  const P = pts();
+  const t = Math.round(carriageMinutes);
+  const idx = findNearbyIdx(t);
+
+  if (idx !== null) {
+    P[idx].v = round2(clampV(P[idx].v + delta));
+    rebuild();
+    localCleanup(t, P[idx].t);
+  } else {
+    if (P.some(p => p.t === t) || t <= 0 || t >= DAY_MIN) return;
+    if (P.length >= MAX_POINTS) { flashWarn('limit punktów (' + MAX_POINTS + ')'); return; }
+    P.push({ t, v: round2(clampV(getPWM(t) + delta)) });
+    P.sort((a, b) => a.t - b.t);
+    rebuild();
+    localCleanup(t, t);
+  }
+  rebuild();
+  updateAll();
+}
+
+// ─── CANVAS ───────────────────────────────────────────────────────────────────
+const canvas = document.getElementById('curve-canvas');
+const ctx = canvas.getContext('2d');
+const PAD = { l: 34, r: 8, t: 14, b: 24 };
+
+function resizeCanvas() {
+  canvas.width  = canvas.parentElement.clientWidth;
+  canvas.height = Math.round(canvas.width * 0.46);
+  drawCurve();
+}
+const cX = t => PAD.l + ((t - viewStart) / (viewEnd - viewStart)) * (canvas.width - PAD.l - PAD.r);
+const cY = v => PAD.t + (1 - v/100) * (canvas.height - PAD.t - PAD.b);
+
+function tracePath(i) {
+  ctx.beginPath();
+  ctx.moveTo(cX(viewStart), cY(getPWM(viewStart, i)));
+  for (let t = viewStart + 2; t <= viewEnd; t += 2) ctx.lineTo(cX(t), cY(getPWM(t, i)));
+}
+
+function drawCurve() {
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  ctx.lineWidth = 1; ctx.font = '10px monospace';
+  [0, 25, 50, 75, 100].forEach(v => {
+    ctx.strokeStyle = '#222';
+    ctx.beginPath(); ctx.moveTo(PAD.l, cY(v)); ctx.lineTo(W - PAD.r, cY(v)); ctx.stroke();
+    ctx.fillStyle = '#4a4a4a'; ctx.fillText(v + '%', 2, cY(v) + 4);
+  });
+
+  const span = viewEnd - viewStart;
+  const gridStep = span <= 240 ? 30 : span <= 480 ? 60 : 240;
+  for (let t = Math.ceil(viewStart / gridStep) * gridStep; t <= viewEnd; t += gridStep) {
+    ctx.strokeStyle = '#1e1e1e';
+    ctx.beginPath(); ctx.moveTo(cX(t), PAD.t); ctx.lineTo(cX(t), H - PAD.b); ctx.stroke();
+    ctx.fillStyle = '#4a4a4a'; ctx.fillText(toHHMM(t), cX(t) - 13, H - 6);
+  }
+
+  // pozostałe kanały — przyciemnione, tylko podgląd
+  CHANNELS.forEach((c, i) => {
+    if (i === cur) return;
+    tracePath(i);
+    ctx.strokeStyle = c.color; ctx.globalAlpha = 0.28; ctx.lineWidth = 1; ctx.stroke();
+    ctx.globalAlpha = 1;
+  });
+
+  // kanał aktywny
+  tracePath(cur);
+  ctx.lineTo(cX(viewEnd), H - PAD.b); ctx.lineTo(cX(viewStart), H - PAD.b); ctx.closePath();
+  ctx.fillStyle = ch().color; ctx.globalAlpha = 0.07; ctx.fill(); ctx.globalAlpha = 1;
+  tracePath(cur);
+  ctx.strokeStyle = ch().color; ctx.lineWidth = 1.5; ctx.stroke();
+
+  const nearby = findNearbyIdx(Math.round(carriageMinutes));
+  pts().forEach((p, i) => {
+    if (p.t < viewStart || p.t > viewEnd) return;
+    const edge = p.t === 0 || p.t === DAY_MIN, hl = i === nearby;
+    ctx.beginPath();
+    ctx.arc(cX(p.t), cY(p.v), hl ? 7 : (edge ? 3 : 5), 0, Math.PI * 2);
+    ctx.fillStyle = hl ? '#fff' : (edge ? '#2a2a2a' : ch().color);
+    ctx.strokeStyle = '#111'; ctx.lineWidth = 1.5; ctx.fill(); ctx.stroke();
+  });
+
+  const kx = cX(carriageMinutes);
+  ctx.setLineDash([3, 3]);
+  ctx.beginPath(); ctx.moveTo(kx, PAD.t); ctx.lineTo(kx, H - PAD.b);
+  ctx.strokeStyle = '#f80'; ctx.lineWidth = 1; ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.beginPath(); ctx.arc(kx, cY(getPWM(carriageMinutes)), 4, 0, Math.PI * 2);
+  ctx.fillStyle = '#f80'; ctx.fill();
+}
+
+// ─── KARETKA ──────────────────────────────────────────────────────────────────
+const track = document.getElementById('carriage-track');
+const carriage = document.getElementById('carriage');
+let dragState = null;
+
+function positionCarriage() {
+  const tw = track.clientWidth, cw = carriage.offsetWidth;
+  const frac = (carriageMinutes - viewStart) / (viewEnd - viewStart);
+  carriage.style.left = Math.max(0, Math.min(tw - cw, frac * tw - cw / 2)) + 'px';
+  document.getElementById('car-label').textContent = toHHMM(carriageMinutes);
+}
+function dragStart(x) { dragState = { startX: x, startMins: carriageMinutes }; carriage.classList.add('dragging'); }
+function dragMove(x) {
+  if (!dragState) return;
+  const dMins = ((x - dragState.startX) / track.clientWidth) * (viewEnd - viewStart);
+  carriageMinutes = Math.max(viewStart, Math.min(viewEnd, dragState.startMins + dMins));
+  updateAll();
+}
+function dragEnd() { dragState = null; carriage.classList.remove('dragging'); }
+
+carriage.addEventListener('mousedown',  e => { e.preventDefault(); dragStart(e.clientX); });
+document.addEventListener('mousemove',  e => dragMove(e.clientX));
+document.addEventListener('mouseup',    dragEnd);
+carriage.addEventListener('touchstart', e => { e.preventDefault(); dragStart(e.touches[0].clientX); }, { passive: false });
+document.addEventListener('touchmove',  e => { if (dragState) { e.preventDefault(); dragMove(e.touches[0].clientX); } }, { passive: false });
+document.addEventListener('touchend',   dragEnd);
+
+// ─── INFO / PRZYCISKI ─────────────────────────────────────────────────────────
+function fmtV(v) { return (fineMode ? v.toFixed(2) : Math.round(v)) + '%'; }
+
+function updateInfo() {
+  const idx = findNearbyIdx(Math.round(carriageMinutes));
+  const el = document.getElementById('info-mode');
+  el.textContent = idx !== null ? '● aktywny punkt #' + idx : '○ interpolacja (▲▼ tworzy punkt)';
+  el.className = idx !== null ? 'snapped' : '';
+  document.getElementById('info-time').textContent  = toHHMM(carriageMinutes);
+  document.getElementById('info-value').textContent = fmtV(getPWM(carriageMinutes));
+  document.getElementById('info-pts').textContent   =
+    'kanał ' + ch().name + ': punktów ' + (pts().length - 2) + '/' + (MAX_POINTS - 2) + '  |  ε=' + epsilonRDP + '%';
+}
+
+function updateDelButton() {
+  const btn = document.getElementById('btn-del');
+  const canDel = findNearbyIdx(Math.round(carriageMinutes)) !== null && pts().length > 2;
+  btn.classList.toggle('active-del', canDel);
+  btn.style.opacity = canDel ? '1' : '0.25';
+}
+
+document.getElementById('btn-del').addEventListener('click', () => {
+  const idx = findNearbyIdx(Math.round(carriageMinutes));
+  if (idx === null || pts().length <= 2) return;
+  pts().splice(idx, 1);
+  rebuild(); updateAll();
+});
+
+function stepNormal() { return fineMode ? STEP_FINE : STEP_NORMAL; }
+function stepLong()   { return fineMode ? STEP_FINE_LONG : STEP_LONG; }
+
+function updateHints() {
+  const h = fmtStep(stepNormal()) + ' / ' + fmtStep(stepLong());
+  document.getElementById('hint-up').textContent = h;
+  document.getElementById('hint-down').textContent = h;
+  document.getElementById('btn-fine').textContent = 'krok: ' + h;
+  document.getElementById('btn-fine').classList.toggle('active', fineMode);
+}
+const fmtStep = s => String(s).replace('.', ',') + '%';
+
+// Krótkie / długie naciśnięcie: czas między press a release rozstrzyga o kroku
+function setupLongPress(el, dir) {
+  let timer;                                                    // undefined = brak aktywnego naciśnięcia
+  const onStart = e => {
+    e.preventDefault();
+    timer = setTimeout(() => { timer = null; }, LONG_PRESS_MS);   // null = już "długie"
+  };
+  const onEnd = e => {
+    e.preventDefault();
+    if (timer === undefined) return;
+    if (timer) { clearTimeout(timer); timer = undefined; changeValue(dir * stepNormal()); }
+    else if (timer === null) { timer = undefined; changeValue(dir * stepLong()); }
+  };
+  const onCancel = () => { if (timer) clearTimeout(timer); timer = undefined; };
+  el.addEventListener('mousedown', onStart);
+  el.addEventListener('mouseup', onEnd);
+  el.addEventListener('mouseleave', onCancel);
+  el.addEventListener('touchstart', onStart, { passive: false });
+  el.addEventListener('touchend', onEnd, { passive: false });
+  el.addEventListener('touchcancel', onCancel);
+}
+setupLongPress(document.getElementById('btn-up'), +1);
+setupLongPress(document.getElementById('btn-down'), -1);
+
+document.getElementById('btn-view').addEventListener('click', toggleView);
+document.getElementById('btn-fine').addEventListener('click', () => { fineMode = !fineMode; updateHints(); updateInfo(); });
+document.querySelectorAll('.btn-eps').forEach(b => b.addEventListener('click', () => {
+  epsilonRDP = parseFloat(b.dataset.eps);
+  document.querySelectorAll('.btn-eps').forEach(x => x.classList.remove('active'));
+  b.classList.add('active');
+  updateInfo();
+}));
+
+// ─── WYBÓR KANAŁU ─────────────────────────────────────────────────────────────
+const chRow = document.getElementById('ch-row');
+CHANNELS.forEach((c, i) => {
+  const b = document.createElement('button');
+  b.className = 'btn-ch'; b.textContent = c.name; b.style.setProperty('--c', c.color);
+  b.addEventListener('click', () => {
+    cur = i;
+    if (viewMode === 'active') { viewMode = 'full'; viewStart = 0; viewEnd = DAY_MIN;
+      const v = document.getElementById('btn-view'); v.textContent = '⊡ okno aktywne'; v.classList.remove('active'); }
+    updateAll();
+  });
+  chRow.appendChild(b);
+});
+function updateChannelUI() {
+  [...chRow.children].forEach((b, i) => b.classList.toggle('active', i === cur));
+  document.getElementById('app').style.setProperty('--c', ch().color);
+}
+
+// ─── EKSPORT (do testów portu C++ i zapisu programu) ──────────────────────────
+const exportEl = document.getElementById('export');
+function showExport(text) { exportEl.style.display = 'block'; exportEl.value = text; }
+
+document.getElementById('btn-json').addEventListener('click', () => {
+  // v w setnych procenta (uint16), t w minutach (uint16) — tak jak w FRAM
+  const prog = CHANNELS.map(c => ({ ch: c.name, pts: c.points.map(p => [p.t, Math.round(p.v * 100)]) }));
+  const bytes = CHANNELS.reduce((a, c) => a + 1 + 4 * c.points.length, 0);
+  showExport(JSON.stringify(prog) + '\n// payload kanałów: ' + bytes + ' B');
+});
+document.getElementById('btn-vec').addEventListener('click', () => {
+  // próbki co 10 min aktywnego kanału (v w %, 4 miejsca) — wzorzec do testu zgodności z C++
+  const rows = ['# kanał ' + ch().name + ': t_min;v_pct'];
+  rows.push('# punkty: ' + JSON.stringify(pts().map(p => [p.t, p.v])));
+  for (let t = 0; t <= DAY_MIN; t += 10) rows.push(t + ';' + getPWM(t).toFixed(4));
+  showExport(rows.join('\n'));
+});
+
+// ─── HELPERS / INIT ───────────────────────────────────────────────────────────
+function toHHMM(m) {
+  return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(Math.floor(m % 60)).padStart(2, '0');
+}
+function updateAll() {
+  updateChannelUI(); positionCarriage(); drawCurve(); updateInfo(); updateDelButton();
+}
+window.addEventListener('resize', resizeCanvas);
+CHANNELS.forEach((_, i) => rebuild(i));
+updateHints();
+resizeCanvas();
+updateAll();
+</script>
+</body>
+</html>
