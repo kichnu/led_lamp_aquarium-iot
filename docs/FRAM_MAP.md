@@ -1,6 +1,6 @@
 # RL90 — mapa FRAM
 
-Stan: projekt 2026-09-23, przed implementacją. Układ: FRAM I2C 32 KB (FM24W256 / MB85RC256V), adres 0x50,
+Stan: 2026-09-24, zaimplementowane (`src/lamp/lamp_types.h`, `lamp_storage.cpp`, `program_store.cpp` — nagłówki wygrywają z tym szkicem). Układ: FRAM I2C 32 KB (FM24W256 / MB85RC256V), adres 0x50,
 adresowanie 2-bajtowe, 0x0000–0x7FFF. Kontekst: `RL90_HANDOFF.md` §9.3–9.4, §10; `CURVE_EDITOR_IMPLEMENTATION.md` §4.
 
 ---
@@ -73,7 +73,7 @@ Nie ma tu trybu testowego ani nocnego: oba są efemeryczne, po restarcie lampa w
 struct LampConfig {             // packed
     uint32_t magic;
     uint16_t ramp_s;              // wspólna rampa, domyślnie 10, zakres 3–30
-    uint8_t  fan_min_pct;         // próg startu (P ≥), domyślnie 20; PWM fana = P
+    uint8_t  fan_on_pct;          // próg startu (P ≥), domyślnie 20; PWM fana = P
     uint8_t  fan_off_pct;         // próg stopu (P <), domyślnie 18 — histereza
                                   // (częstotliwości PWM LED/FAN = #define 500 Hz, nie w FRAM)
     uint16_t night_preset[4];     // setne % (0,1 % = 10), start suwaków trybu nocnego
@@ -162,10 +162,9 @@ Przy okazji: `created_ts` w nagłówku umożliwia sortowanie listy wg daty (pyta
 
 ## Uwagi implementacyjne
 
-- Biblioteka: Adafruit FRAM **I2C** (w termostacie była SPI); `fram_controller` z `src/` wymaga tylko wymiany
-  warstwy sterownika.
-- Bufor `Wire` na ESP32 to 128 B: zapisy dłuższe niż ~126 B (2 B adresu) w porcjach. Sprawdzić, czy robi to
-  biblioteka (`Adafruit_I2CDevice`), czy trzeba samemu.
+- Sterownik: własny, blokowy na `Wire` (porcje 64 B + odczyt kontrolny). Adafruit_FRAM_I2C odrzucony — czyta
+  i pisze bajt po bajcie (5 B transakcji na 1 B danych).
+- CRC: CRC32 (IEEE) w każdej sekcji; poświadczenia zostają przy 16-bitowej sumie z modułu crypto.
 - Wspólna magistrala z DS3231: procedura odzyskiwania magistrali (§10) i timeout I2C krótszy niż 5 s TWDT.
 - Częstotliwość zapisów jest mała (config, program, raz na dobę SYSTEM_STATE), więc FRAM nie wymaga żadnego
   rozkładania zapisów.

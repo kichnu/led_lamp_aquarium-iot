@@ -4,7 +4,6 @@
 #include "../crypto/fram_encryption.h"
 #include "../hardware/fram_controller.h"
 #include "../hardware/fram_constants.h"
-#include "../algorithm/algorithm_config.h"
 #include <stddef.h>
 
 // ── Helper: build FRAMCredentials with optional partial update ────────────────
@@ -105,7 +104,6 @@ void handleConfigureSubmit(AsyncWebServerRequest *request, JsonVariant &json) {
     String wifiSSID      = obj["wifi_ssid"]      | "";
     String wifiPassword  = obj["wifi_password"]  | "";
     String adminPassword = obj["admin_password"] | "";
-    String lockPin       = obj["lock_pin"]       | "";
 
     // Helper: send error response
     auto sendError = [&](int code, const String& msg, const String& field = "") {
@@ -120,13 +118,6 @@ void handleConfigureSubmit(AsyncWebServerRequest *request, JsonVariant &json) {
     // --- Validate credentials ------------------------------------------------
     ValidationResult v = prov_validateAllCredentials(deviceName, wifiSSID, wifiPassword, adminPassword);
     if (!v.valid) { sendError(400, v.errorMessage, v.errorField); return; }
-
-    // Lock-PIN — optional, blank = keep current/default "1234" (lazy-init w
-    // loadLockPinFromFRAM), więc walidacja tylko gdy user faktycznie coś wpisał.
-    if (lockPin.length() > 0) {
-        ValidationResult pinV = prov_validateLockPin(lockPin);
-        if (!pinV.valid) { sendError(400, pinV.errorMessage, pinV.errorField); return; }
-    }
 
     // --- Read existing FRAM --------------------------------------------------
     FRAMCredentials existingFram;
@@ -158,16 +149,6 @@ void handleConfigureSubmit(AsyncWebServerRequest *request, JsonVariant &json) {
     }
 
     LOG_INFO("Credentials saved OK for device: %s", deviceName.c_str());
-
-    // --- Lock-PIN (opcjonalny) ------------------------------------------------
-    if (lockPin.length() > 0) {
-        LockPin lp{};
-        strncpy(lp.pin, lockPin.c_str(), sizeof(lp.pin) - 1);
-        if (!saveLockPinToFRAM(lp)) {
-            sendError(500, "Failed to save lock PIN to FRAM"); return;
-        }
-        LOG_INFO("Lock PIN updated via provisioning");
-    }
 
     // --- Success -------------------------------------------------------------
     JsonDocument respDoc;

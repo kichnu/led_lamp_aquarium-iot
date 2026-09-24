@@ -14,14 +14,9 @@ extern const char* ADMIN_PASSWORD_HASH;
 extern const char* DEVICE_ID;
 extern const IPAddress TRUSTED_PROXY_IP;
 
-// ================= SYSTEM DISABLE/ENABLE =================
-extern bool systemDisabled;
-#define SYSTEM_AUTO_ENABLE_MS (15UL * 60UL * 1000UL)  // 15 min
-
-void setSystemState(bool enabled);
-bool isSystemDisabled();
-void checkSystemAutoEnable();
-uint32_t getSystemAutoEnableRemainingS();  // sekundy do auto-enable; 0 gdy Auto Mode
+// ================= FIRMWARE =================
+#define FW_NAME     "RL90 Lamp"
+#define FW_VERSION  "0.1.0"
 
 // ================= SECURITY CONSTANTS =================
 const unsigned long SESSION_TIMEOUT_MS      = 1800000;
@@ -38,7 +33,5 @@ const unsigned long BLOCK_DURATION_MS       = 60000;
 #define ADMIN_PASSWORD_HASH_DYNAMIC  getAdminPasswordHash()
 #define DEVICE_ID_DYNAMIC            getDeviceID()
 
-// ================= FRAM =================
-void initSystemFRAM();  // initFRAM (SPI)
 
 #endif // CONFIG_H

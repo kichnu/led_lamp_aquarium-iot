@@ -31,8 +31,8 @@ void initWebServer() {
     // Health check endpoint (no session required)
     server.on("/api/health", HTTP_GET, handleHealth);
 
-    // Thermo Control API endpoints
-    registerThermoHandlers(server);
+    // RL90 Lamp API endpoints
+    registerLampHandlers(server);
 
     // 404 handler - also enforce whitelist
     server.onNotFound([](AsyncWebServerRequest* request) {

@@ -19,28 +19,21 @@ void initWiFi() {
     LOG_INFO("Connecting to WiFi: %s", ssid);
     LOG_INFO("Credentials source: %s", areCredentialsLoaded() ? "FRAM" : "Hardcoded fallback");
     
+    // Bez czekania na połączenie (termostat czekał do 25 s) — lampa ma świecić wg
+    // programu od razu po starcie, także bez sieci. Wynik logowany w updateWiFi().
     WiFi.begin(ssid, password);
-    
-    int attempts = 0;
-    while (WiFi.status() != WL_CONNECTED && attempts < 50) {
-        delay(500);
-        attempts++;
-        LOG_INFO("WiFi connection attempt %d/50", attempts);
-    }
-    
-    if (WiFi.status() == WL_CONNECTED) {
-        LOG_INFO("WiFi connected - IP: %s", WiFi.localIP().toString().c_str());
-        LOG_INFO("Using %s credentials", areCredentialsLoaded() ? "FRAM" : "fallback");
-    } else {
-        LOG_ERROR("WiFi connection failed after 50 attempts");
-        if (!areCredentialsLoaded()) {
-            LOG_ERROR("Consider programming correct credentials via Captive Portal");
-        }
-    }
+    lastReconnectAttempt = millis();
 }
 
 void updateWiFi() {
-    if (WiFi.status() != WL_CONNECTED) {
+    static bool wasConnected = false;
+    bool connected = WiFi.status() == WL_CONNECTED;
+    if (connected != wasConnected) {
+        wasConnected = connected;
+        if (connected) LOG_INFO("WiFi connected - IP: %s", WiFi.localIP().toString().c_str());
+        else LOG_WARNING("WiFi disconnected");
+    }
+    if (!connected) {
         unsigned long now = millis();
         if (now - lastReconnectAttempt > RECONNECT_INTERVAL) {
             LOG_WARNING("WiFi reconnecting...");

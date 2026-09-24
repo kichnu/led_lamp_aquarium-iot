@@ -4,81 +4,32 @@
 #include <Arduino.h>
 #include "fram_constants.h"
 
-// Basic FRAM functions
+// ============================================================
+// FRAM I2C (FM24W256 / MB85RC256V, 0x50) — warstwa blokowa.
+// Własny sterownik na Wire zamiast Adafruit_FRAM_I2C: biblioteka czyta i pisze
+// bajt po bajcie (5 B transakcji na 1 B danych). Tu porcje po FRAM_CHUNK bajtów
+// (bufor Wire na ESP32 = 128 B, 2 B idą na adres).
+// Wire musi być zainicjalizowany wcześniej (initI2CBus()).
+// ============================================================
+
+void initI2CBus();                  // Wire.begin + timeout; wspólna magistrala z DS3231
+bool i2cBusRecover();               // 9 impulsów SCL + STOP, ponowny Wire.begin
+
 bool initFRAM();
 bool isFramInitialized();
-bool framReconnect();
-bool verifyFRAM();
+
+bool framRead(uint16_t addr, void* buf, size_t len);
+bool framWrite(uint16_t addr, const void* buf, size_t len);   // z odczytem kontrolnym
+
+uint32_t crc32Calc(const void* data, size_t len, uint32_t crc = 0);
 
 // ===============================
-// FRAM CREDENTIALS SECTION
-// (Used by programming mode)
+// CREDENTIALS (provisioning, credentials_manager — API bez zmian z termostatu)
 // ===============================
-
-// Forward declaration for credentials structure (defined in crypto/fram_encryption.h)
 struct FRAMCredentials;
 
 bool readCredentialsFromFRAM(FRAMCredentials& creds);
 bool writeCredentialsToFRAM(const FRAMCredentials& creds);
 bool verifyCredentialsInFRAM();
-
-// ===============================
-// THERMO CONFIG SECTION
-// ===============================
-
-// Forward declaration (defined in algorithm/algorithm_config.h)
-struct ThermoConfig;
-
-bool saveThermoConfigToFRAM(const ThermoConfig& cfg);
-bool loadThermoConfigFromFRAM(ThermoConfig& cfg);
-
-// ===============================
-// ENERGY STORE SECTION (licznik impulsów miernika energii, checksum wbudowany w struct)
-// ===============================
-
-struct EnergyStore;
-
-bool saveEnergyStoreToFRAM(const EnergyStore& store);
-bool loadEnergyStoreFromFRAM(EnergyStore& store);
-
-struct EnergyResetInfo;
-
-bool saveEnergyResetInfoToFRAM(const EnergyResetInfo& info);
-bool loadEnergyResetInfoFromFRAM(EnergyResetInfo& info);
-
-// ===============================
-// RING BUFFERS — godzinowy/dobowy (TempAvgRecord) i zdarzeń alarmowych
-// (AlarmEvent), patrz fram_constants.h i algorithm_config.h
-// ===============================
-
-struct TempAvgRecord;
-struct AlarmEvent;
-
-bool     saveHourlyRecord(const TempAvgRecord& rec);
-uint16_t loadHourlyHistory(TempAvgRecord* buf, uint16_t maxCount);  // newest-first
-uint16_t getHourlyRecordCount();
-
-bool     saveDailyRecord(const TempAvgRecord& rec);
-uint16_t loadDailyHistory(TempAvgRecord* buf, uint16_t maxCount);   // newest-first
-uint16_t getDailyRecordCount();
-
-bool     saveAlarmEvent(const AlarmEvent& ev);
-uint16_t loadAlarmEvents(AlarmEvent* buf, uint16_t maxCount);       // newest-first
-uint16_t getAlarmEventCount();
-
-// Czyści bufor (count=0, wptr=0) — dane pod spodem zostają w FRAM, ale są
-// logicznie niewidoczne. Używane przez /api/test/clear-history.
-void clearHourlyHistory();
-void clearDailyHistory();
-void clearAlarmEvents();
-
-// ===============================
-// Lock-PIN edycji GUI (2026-07-15) — checksum wbudowany w struct, jak EnergyStore.
-// ===============================
-
-struct LockPin;
-
-bool saveLockPinToFRAM(const LockPin& pin);
-bool loadLockPinFromFRAM(LockPin& pin);                       // złą checksumę traktuje jako "brak PIN-u" — lazy-init do "1234"
 
 #endif

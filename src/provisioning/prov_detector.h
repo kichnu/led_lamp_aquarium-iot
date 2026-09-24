@@ -15,4 +15,10 @@
  */
 bool checkProvisioningButton();
 
+/**
+ * Diagnostyka przycisku w trakcie pracy (wywołuj w loop()): loguje naciśnięcie
+ * i zwolnienie z czasem trzymania. Tylko log — przycisk w pracy nic nie robi.
+ */
+void updateProvisioningButtonLog();
+
 #endif

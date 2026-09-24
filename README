@@ -4,14 +4,12 @@ Zamiana modułu Wi-Fi Tuya CBU w lampie PopBloom RL90 na Seeed XIAO ESP32-C3 z w
 4 kanały PWM LED + wentylator, RTC DS3231, FRAM I2C 32 KB, dobowe programy światła wykonywane lokalnie,
 GUI z edytorem krzywych, docelowo synchronizacja kilku lamp przez ESP-NOW.
 
-Stan: faza projektowa.
+Stan: etap 1 zaimplementowany (backend, GUI z edytorem, OTA), nietestowany na sprzęcie.
+Build: `pio run`; OTA: `pio run -e seeed_xiao_esp32c3_ota -t upload` (hasło w `OTA_PASSWORD_192_168_10_5`).
 - `docs/USTALENIA.md` — co ustalone, co otwarte
 - `docs/RL90_HANDOFF.md` — sprzęt, pomiary, architektura
 - `docs/FRAM_MAP.md` — mapa pamięci FRAM
 - `docs/curve_editor_linear.html` — prototyp edytora (otworzyć w przeglądarce)
-- `pwm_test/` — firmware testowy PWM / gpio_hold (`cd pwm_test && pio run -t upload`)
-
-`src/` i główny `platformio.ini` to na razie baza skopiowana z projektu thermo_control-iot (ESP32-S3),
-źródło modułów do ponownego użycia — nie kod lampy.
+- `pwm_test/` — archiwalny firmware testowy PWM / gpio_hold
 
 Licencja: MIT (`LICENSE`).

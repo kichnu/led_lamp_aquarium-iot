@@ -15,7 +15,7 @@
  * 
  * Request body (JSON):
  * {
- *   "device_name": "water-pump-01",
+ *   "device_name": "rl90-lamp-1",
  *   "wifi_ssid": "MyNetwork",
  *   "wifi_password": "password123",
  *   "admin_password": "admin123",

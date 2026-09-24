@@ -9,7 +9,7 @@ replaced by a **Seeed XIAO ESP32-C3** (PlatformIO, Arduino framework). 4 PWM LED
 drivers) + PWM fan, DS3231 RTC, I2C FRAM 32 KB, a per-channel daily light curve ("program") executed locally,
 web GUI with a curve editor, later ESP-NOW sync between 2–3 lamps.
 
-**Status: design phase.** Decisions are settled in docs; the final firmware is not written yet.
+**Status: stage 1 implemented, not yet tested on hardware** (backend, GUI with editor, OTA). ESP-NOW = stage 2.
 
 ## Repository Layout
 
@@ -21,19 +21,26 @@ docs/
   CURVE_EDITOR_IMPLEMENTATION.md  curve editor / program format / API sketch (partly stale: still Akima, see USTALENIA)
   curve_editor_linear.html        chosen editor prototype (polyline) — make editor changes HERE
   curve_editor.html               older Akima variant, kept for reference only
-  c6_bringup/                     archived first bring-up test on XIAO ESP32-C6
   NETWORK_TOPOLOGY_ESP32.md, OTA_WIFI_UPLOAD_PATTERN.md   patterns reused from sibling projects
-pwm_test/                         standalone PWM + gpio_hold test for XIAO C3 (own platformio.ini)
-src/, platformio.ini              BASELINE COPIED FROM thermo_control-iot (ESP32-S3) — not lamp code yet
+pwm_test/                         archived PWM test (no further tests here — only on final hw/firmware)
+src/                              lamp firmware (XIAO ESP32-C3)
+  lamp/                           lamp_types.h (FRAM structs, #defines), lamp_storage (system area),
+                                  program_store (24 slots, factory program), light_engine (curve, ramp, fan, restart)
+  hardware/                       fram_controller (own I2C block driver), rtc_controller (DS3231 + background SNTP),
+                                  pwm_output (LEDC 500 Hz/14 bit, gpio_hold restart), hardware_pins.h
+  web/                            web_handlers (lamp API), html_pages (GUI: thermostat CSS + editor port)
+  core/lamp_lock                  recursive mutex: AsyncTCP handlers vs loop() (FRAM/I2C + lamp state)
+  provisioning/, security/, crypto/, config/, network/   reused from thermo_control-iot
 ```
 
 ## Rules
 
-- **Do not modify `src/` or the root `platformio.ini`** until the user explicitly starts the final
-  implementation. They are the thermostat codebase kept as a source of reusable modules (RTC, web server,
-  provisioning, network, credentials, security, logging/OTA).
-- Before a design decision, check how sibling projects in `~/Dokumenty/My_apps/IOT/` solved it (dosing_system
-  is the closest: same ESP32-C3 + I2C FRAM MB85RC256V) and reuse the proven pattern including its known fixes.
+- Before a design decision, check how sibling projects in `~/Dokumenty/My_apps/IOT/` solved it and reuse the
+  proven pattern including its known fixes. Closest on the same MCU: top_off_water_new-iot (XIAO ESP32-C3,
+  FRAM I2C, OTA with min_spiffs.csv). dosing_system builds for seeed_xiao_esp32s3 (despite docs calling it C3).
+- Serve HTML with `beginResponse(200, type, (const uint8_t*)html, strlen(html))` — never `send(200, type, const char*)`,
+  which copies the ~55 KB page into a heap String on every request (C3 has no PSRAM).
+- Web handlers run in the AsyncTCP task: anything touching FRAM/I2C or lamp state goes under `LampLock`.
 - When something is decided, update `docs/USTALENIA.md` right away: move it to "Ustalone", remove it from
   "Do ustalenia", renumber — without asking.
 - `docs/*.md` code snippets are design sketches; once firmware exists, headers win.
@@ -41,12 +48,13 @@ src/, platformio.ini              BASELINE COPIED FROM thermo_control-iot (ESP32
 ## Build Commands
 
 ```bash
-# PWM / gpio_hold test (XIAO ESP32-C3) — AP "RL90-PWM-TEST" / "pwmtest123", captive portal GUI
-cd pwm_test && pio run -t upload
-pio device monitor                 # 115200 baud
+pio run                                            # build (XIAO ESP32-C3)
+pio run -t upload                                  # USB (first flash must be USB)
+export OTA_PASSWORD_192_168_10_5=... && pio run -e seeed_xiao_esp32c3_ota -t upload   # OTA, same command
+pio device monitor                                 # 115200 baud
+pio device monitor --port socket://192.168.10.5:8880   # log-socket over WiFi
 ```
-
-The root project (`pio run` in repo root) still builds the thermostat for ESP32-S3 — not relevant for the lamp.
+Provisioning: hold GPIO10 button 5 s at boot → AP "RL90-LAMP-SETUP" / "setup12345".
 
 ## Key Decisions (summary — details in USTALENIA.md)
 

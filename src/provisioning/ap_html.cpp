@@ -7,7 +7,7 @@ const char SETUP_PAGE_HTML[] PROGMEM = R"rawliteral(
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ESP32 Water System Setup</title>
+    <title>RL90 Lamp Setup</title>
     <style>
         * {
             margin: 0;
@@ -276,7 +276,7 @@ const char SETUP_PAGE_HTML[] PROGMEM = R"rawliteral(
 <body>
     <div class="container">
         <div class="header">
-            <h1>Top Off Water System</h1>
+            <h1>RL90 Lamp</h1>
             <p>Device Configuration</p>
         </div>
         
@@ -331,18 +331,6 @@ const char SETUP_PAGE_HTML[] PROGMEM = R"rawliteral(
                 </div>
 
                 <!-- Dashboard Settings -->
-                <hr style="margin: 24px 0 20px; border: none; border-top: 1px solid #eee;">
-                <p style="color: #888; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 20px;">Dashboard Settings</p>
-
-                <div class="form-group">
-                    <label for="lock_pin">Settings Lock PIN</label>
-                    <input type="password" id="lock_pin" name="lock_pin"
-                           placeholder="leave blank to keep current"
-                           inputmode="numeric" pattern="[0-9]*" maxlength="7">
-                    <small id="lock_pin_hint">Leave blank to keep current. 4-7 digits, numeric only. Default: 1234.</small>
-                    <span class="error" id="lock_pin_error">PIN must be 4-7 digits</span>
-                </div>
-
                 <button type="submit" class="btn" id="submitBtn">
                     <span id="submitBtnText">Save Configuration</span>
                     <span class="spinner hidden" id="submitSpinner"></span>
@@ -351,7 +339,7 @@ const char SETUP_PAGE_HTML[] PROGMEM = R"rawliteral(
         </div>
         
         <div class="footer">
-            ESP32-C3 Water System v1.0 | Provisioning Mode
+            RL90 Lamp (XIAO ESP32-C3) | Provisioning Mode
         </div>
     </div>
 
@@ -484,8 +472,6 @@ const char SETUP_PAGE_HTML[] PROGMEM = R"rawliteral(
                 const r = await fetch('/api/prov/config');
                 const d = await r.json();
                 if (d.device_name) document.getElementById('device_name').value = d.device_name;
-                // lock_pin celowo nigdy nie jest wypełniany z serwera (sekret, jak hasła) —
-                // puste pole = zachowaj bieżący/domyślny PIN.
 
                 if (!d.is_configured) {
                     // First-time setup — passwords required
@@ -518,8 +504,7 @@ const char SETUP_PAGE_HTML[] PROGMEM = R"rawliteral(
                 device_name:   document.getElementById('device_name').value,
                 wifi_ssid:     document.getElementById('wifi_ssid').value,
                 wifi_password: document.getElementById('wifi_password').value,
-                admin_password:document.getElementById('admin_password').value,
-                lock_pin:      document.getElementById('lock_pin').value
+                admin_password:document.getElementById('admin_password').value
             };
 
             // Validate
@@ -556,12 +541,6 @@ const char SETUP_PAGE_HTML[] PROGMEM = R"rawliteral(
                 hasErrors = true;
             } else if (formData.admin_password.length > 0 && formData.admin_password.length < 8) {
                 adminPassEl.parentElement.classList.add('has-error');
-                hasErrors = true;
-            }
-
-            // Lock PIN (optional — blank = keep current/default)
-            if (formData.lock_pin.length > 0 && !/^[0-9]{4,7}$/.test(formData.lock_pin)) {
-                document.getElementById('lock_pin').parentElement.classList.add('has-error');
                 hasErrors = true;
             }
 

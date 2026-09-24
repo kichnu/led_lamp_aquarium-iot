@@ -1,12 +1,17 @@
 #include "html_pages.h"
 
+// GUI lampy RL90. CSS: pełny wzorzec z termostatu (thermo_control-iot) + dodatki
+// lampy na końcu bloku <style>. Kolor przewodni do ustalenia — zmienne w :root.
+// Strony serwowane z flasha bez kopii do heapu (web_handlers.cpp, sendPage()).
+// Ścieżki API względne ('api/...') — działa też za nginx pod /device/lampN/.
+
 static const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Thermo Control</title>
+<title>RL90 Lamp</title>
 <style>
   :root {
     --bg-primary:#0a0f1a; --bg-card:#111827; --bg-input:#1e293b; --border:#2d3a4f;
@@ -217,6 +222,51 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
   .fan-step-btn:disabled { opacity:1; cursor:not-allowed; } /* fade już daje .fan-stepper.disabled na całości, bez podwójnego przyciemnienia */
   .fan-step-val { flex:1; padding:0 4px; font-size:.9rem; font-weight:600; color:var(--text-primary); min-width:46px; text-align:center; align-self:center; }
   .fan-stepper.active .fan-step-val, .fan-stepper.active .fan-step-btn { color:var(--service-text); }
+  /* ================= RL90 Lamp — dodatki do wzorca termostatu ================= */
+  :root { --ch-a:#ffff66; --ch-b:#cc33ff; --ch-c:#0066ff; --ch-d:#00ffcc; }
+  .power-label { font-size:var(--font-sm); color:var(--text-muted); text-transform:uppercase; letter-spacing:.05em; align-self:center; }
+  .ch-bars { display:grid; gap:6px; margin-top:12px; }
+  .ch-bar { display:grid; grid-template-columns:18px 1fr 64px; align-items:center; gap:8px; font-size:var(--font-sm); }
+  .ch-bar b { font-family:'Courier New',monospace; }
+  .ch-track { height:10px; background:var(--bg-input); border:1px solid var(--border); border-radius:5px; overflow:hidden; }
+  /* Liniowo i tyle, ile trwa odstęp odpytywania (--poll, ustawiane w JS) — pasek jedzie płynnie
+     między odczytami zamiast skoku + postoju */
+  .ch-fill { height:100%; width:0; transition:width var(--poll,2s) linear; }
+  .ch-val { text-align:right; font-family:'Courier New',monospace; color:var(--text-secondary); }
+  .diag { margin-top:12px; font-size:var(--font-xs); color:var(--text-muted); line-height:1.6; }
+  .diag b { color:var(--text-secondary); font-weight:600; }
+
+  .prog-list { display:flex; flex-direction:column; gap:6px; }
+  .prog-row { display:flex; align-items:center; gap:8px; background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:6px 6px 6px 12px; }
+  .prog-row.active { border-color:rgba(34,197,94,0.45); background:rgba(34,197,94,0.06); }
+  .prog-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
+  .prog-row button { margin:0; padding:6px 10px; font-size:var(--font-xs); }
+  .prog-meta { font-size:var(--font-xs); color:var(--text-muted); margin-top:8px; }
+
+  /* Edytor — port docs/curve_editor_linear.html (krzyż 3×3, karetka, wykres) */
+  #edCanvas { display:block; width:100%; height:240px; touch-action:none; background:var(--bg-primary); border:1px solid var(--border); border-radius:var(--radius-sm); }
+  #edTrack { position:relative; height:30px; margin-top:8px; background:var(--bg-primary); border:1px solid var(--border); border-radius:var(--radius-sm); overflow:hidden; }
+  #edCarriage { position:absolute; top:50%; transform:translateY(-50%); width:20px; height:78%; background:#1e1e10; border:3px solid #ccc; border-radius:3px; cursor:grab; user-select:none; touch-action:none; }
+  #edCarriage.dragging { cursor:grabbing; }
+  .ed-pad { display:grid; gap:8px; margin-top:8px; grid-template-columns:1fr 1fr 1fr; grid-template-rows:repeat(3,58px); }
+  .ed-pad > div, .ed-pad > button { margin:0; display:flex; align-items:center; justify-content:center; background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); color:var(--text-primary); font-size:22px; cursor:pointer; user-select:none; touch-action:manipulation; -webkit-tap-highlight-color:transparent; }
+  .ed-pad > div:active { border-color:var(--accent-cyan); }
+  .ed-pad .btn-ch { font-family:'Courier New',monospace; font-weight:700; font-size:18px; padding:0; }
+  .ed-pad .btn-ch.active { color:var(--c); border-color:var(--c); }
+  #edDel.mode-del { border-color:var(--accent-red); color:var(--accent-red); background:rgba(239,68,68,0.10); }
+  #edDel.mode-add { border-color:var(--accent-green); color:var(--accent-green); background:rgba(34,197,94,0.10); }
+  .ed-tools { display:flex; gap:8px; align-items:center; margin-top:10px; flex-wrap:wrap; }
+  .ed-tools input { flex:1; min-width:140px; height:40px; padding:0 12px; background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); color:var(--text-primary); font-size:var(--font-md); }
+  .ed-tools button { margin:0; }
+  #edFine.on { border-color:var(--accent-yellow); color:var(--accent-yellow); }
+
+  /* Tryb ręczny — 4 pionowe suwaki */
+  .sliders { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-top:14px; }
+  .slider-col { display:flex; flex-direction:column; align-items:center; gap:6px; }
+  .slider-col input[type=range] { writing-mode:vertical-lr; direction:rtl; height:180px; width:36px; accent-color:var(--c); }
+  .slider-col .val { font-family:'Courier New',monospace; font-size:var(--font-sm); color:var(--text-secondary); }
+  .slider-col .lbl { font-weight:700; color:var(--c); }
+  .btn-row > button.on { border-color:var(--service-border); background:var(--service-bg); color:var(--service-text); }
 </style>
 </head>
 <body>
@@ -225,23 +275,16 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
 <div class="topbar">
   <div class="logo">
     <div class="logo-icon">
-      <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
+      <svg viewBox="0 0 24 24"><path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z"/></svg>
     </div>
-    <h1>Thermo Control</h1>
+    <h1>RL90 Lamp</h1>
   </div>
   <div class="topbar-actions">
-    <button class="lock-btn locked" id="lockBtn" onclick="toggleLock()">LOCKED</button>
     <button class="btn-back" id="btnLogout">Back</button>
   </div>
 </div>
-<form id="lockFormBar" class="lock-form-bar" onsubmit="submitUnlock();return false;" autocomplete="off">
-  <input type="password" id="lockPwdInput" class="lock-pwd-input" placeholder="PIN…" inputmode="numeric" maxlength="8" pattern="[0-9]*" autocomplete="one-time-code">
-  <span id="lockFormMsg" class="lock-pwd-msg"></span>
-  <button type="submit">Unlock</button>
-  <button type="button" class="lock-close-btn" onclick="hideLockForm()">&#215;</button>
-</form>
 
-<!-- Pierwsza karta: SYSTEM STATUS — wzorzec dla pozostałych kart (2026-07-15) -->
+<!-- SYSTEM STATUS -->
 <div class="card">
   <div class="card-header">
     <div class="card-header-icon" style="background:rgba(56,189,248,0.15);">
@@ -250,140 +293,107 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
     <h2>System Status</h2>
     <div class="status-main-wifi wifi-off" id="wifiItem">
       <span class="wifi-label">WiFi</span>
-      <span class="wifi-dot" id="wifiStatus">●</span>
+      <span class="wifi-dot">●</span>
     </div>
   </div>
   <div class="status-main status-ok" id="statusMain">
     <div class="status-main-body">
-      <div class="temp"><span id="temp">--.-°C</span></div>
+      <div class="temp"><span id="power">--%</span><span class="power-label">LED power</span></div>
       <div class="status-main-sub">
-        <span class="badge idle" id="state">IDLE</span>
+        <span class="badge idle" id="mode">PROGRAM</span>
         <span class="sub-sep">•</span>
-        <span>Heater: <span class="badge" id="heater">OFF</span></span>
+        <span id="activeName">—</span>
         <span class="sub-sep">•</span>
-        <span>Fan: <span class="badge" id="fan">0%</span></span>
+        <span>Fan: <span class="badge" id="fan">OFF</span></span>
         <span class="sub-sep">•</span>
-        <span>Alarms: <span class="badge" id="alarms">none</span></span>
+        <span id="clock">--:--</span>
       </div>
     </div>
   </div>
+  <div class="ch-bars" id="chBars"></div>
+  <div class="diag" id="diag"></div>
 </div>
 
-<div class="card">
-  <div class="card-header">
-    <div class="card-header-icon" style="background:rgba(234,179,8,0.15);">
-      <svg fill="currentColor" style="color:var(--accent-yellow);" viewBox="0 0 24 24"><path d="M11 21h-1l1-7H7.5c-.58 0-.57-.32-.38-.66C8.48 10.94 10.42 7.54 13.01 3h1l-1 7h3.51c.4 0 .58.19.36.66C13.94 15.35 11 21 11 21z"/></svg>
-    </div>
-    <h2>Energy</h2>
-  </div>
-  <div class="energy-row">
-    <div class="energy-total"><span class="energy-total-label">Total Energy:</span> <span class="energy-total-value"><span id="energy_total">00.00</span> kWh</span></div>
-    <div class="energy-reset-group">
-      <button class="lockable-btn" id="btnEnergyReset">Reset Total Counter</button>
-      <div class="energy-reset-info">Last Reset: <b id="energyResetTs">never</b></div>
-    </div>
-  </div>
-</div>
-
-<!-- Druga karta: SYSTEM CONTROL — te same elementy graficzne co System Status.
-     Ręczne sterowanie (heater/fan) i karta System/Service Mode jako całość
-     to jedyny wyjątek od mechanizmu PIN-lock (potwierdzone przez użytkownika,
-     2026-07-15) — dodatkowo ręczne przyciski są aktywne TYLKO w Service Mode
-     (patrz .manual-ctrl w refresh()). -->
+<!-- PROGRAMS -->
 <div class="card">
   <div class="card-header">
     <div class="card-header-icon" style="background:rgba(34,197,94,0.15);">
-      <svg fill="currentColor" style="color:var(--accent-green);" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/></svg>
+      <svg fill="none" stroke="currentColor" stroke-width="2" style="color:var(--accent-green);" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/></svg>
     </div>
-    <h2>System Control</h2>
+    <h2>Programs</h2>
   </div>
-
-  <div class="btn-row">
-    <button id="btnSystemToggle">…</button>
-    <button id="btnAck">Mute Alarm</button>
-    <button id="btnResetSensor" class="danger">Reset Sensor Fault</button>
-  </div>
-  <div id="sensorFaultBanner" style="display:none; margin-top:8px; color:var(--accent-red); font-weight:bold;">
-    ⚠ SENSOR FAULT (critical) — heater and fan frozen until manually confirmed
-  </div>
-
-  <div class="btn-row" style="margin-top:14px; padding-top:14px; border-top:1px solid var(--border);">
-    <button class="manual-ctrl" id="heaterToggle">Heater: OFF</button>
-    <button class="manual-ctrl" id="fanToggle">Fan: OFF</button>
-    <div class="fan-stepper manual-ctrl disabled" id="fanStepper">
-      <button type="button" class="fan-step-btn" onclick="stepFan(-1)">▼</button>
-      <span class="fan-step-val" id="fanStepVal">0%</span>
-      <button type="button" class="fan-step-btn" onclick="stepFan(1)">▲</button>
-    </div>
-  </div>
+  <div class="prog-list" id="progList"></div>
+  <div class="prog-meta" id="progMeta"></div>
 </div>
 
-<button id="algSettingsBtn" class="settings-toggle-btn" onclick="toggleAlgSettings()">⚙ Settings</button>
-
-<div class="card" id="algSettingsPanel" style="display:none;">
-  <div class="settings-title">Algorithm Parameters</div>
-  <div class="settings-grid">
-    <label class="settings-field">Target temperature [°C]<input type="number" step="0.1" id="target_temp"></label>
-    <label class="settings-field">Heater hysteresis [°C]<input type="number" step="0.1" min="0.1" id="heat_hyst"></label>
-    <label class="settings-field">Thermal buffer [°C]<input type="number" step="0.1" id="thermal_buffer"></label>
-    <label class="settings-field">Fan hysteresis [°C]<input type="number" step="0.1" min="0.1" id="cool_start"></label>
-    <label class="settings-field">Fan 100% [°C]<input type="number" step="0.1" id="cool_full"></label>
-    <label class="settings-field">Minimum fan speed [%]<input type="number" step="1" min="0" max="100" id="fan_min_pct"></label>
-    <label class="settings-field">ALARM_LOW threshold [°C]<input type="number" step="0.1" id="alarm_delta_low"></label>
-    <label class="settings-field">ALARM_HIGH threshold [°C]<input type="number" step="0.1" id="alarm_delta_high"></label>
-    <label class="settings-field">Heater fault: min. temp rise [°C]<input type="number" step="0.1" id="trend_alarm_delta"></label>
-    <label class="settings-field">Heater fault: check window [min]<input type="number" step="1" min="5" id="trend_window_min"></label>
-    <label class="settings-field">Sensor calibration [°C]<input type="number" step="0.1" id="temp_offset"></label>
-    <label class="settings-field">Reserved<input type="number" step="1" id="heater_watt"></label>
-    <label class="settings-field">Pulses / kWh (energy meter)<input type="number" step="1" id="pulses_per_kwh"></label>
+<!-- EDITOR -->
+<div class="card" id="edCard" style="display:none;">
+  <div class="card-header">
+    <div class="card-header-icon" style="background:rgba(234,179,8,0.15);">
+      <svg fill="none" stroke="currentColor" stroke-width="2" style="color:var(--accent-yellow);" viewBox="0 0 24 24"><polyline points="3,18 8,10 13,14 21,5"/></svg>
+    </div>
+    <h2 id="edTitle">Editor</h2>
+  </div>
+  <canvas id="edCanvas"></canvas>
+  <div id="edTrack"><div id="edCarriage"></div></div>
+  <div class="ed-pad">
+    <button class="btn-ch" id="edCh0">A</button>
+    <div id="edUp">▲</div>
+    <button class="btn-ch" id="edCh1">B</button>
+    <div id="edLeft">◀</div>
+    <div id="edDel">＋</div>
+    <div id="edRight">▶</div>
+    <button class="btn-ch" id="edCh3">D</button>
+    <div id="edDown">▼</div>
+    <button class="btn-ch" id="edCh2">C</button>
+  </div>
+  <div class="ed-tools">
+    <button id="edFine" title="Fine step 0.1%">0.1%</button>
+    <button id="edView" title="View 00:00–24:00 / 08:00–24:00">08–24</button>
+    <input type="text" id="edName" maxlength="23" placeholder="Program name">
   </div>
   <div class="btn-row" style="margin-top:10px;">
-    <button class="lockable-btn primary" id="btnSaveThermo">Save</button>
-    <button type="button" onclick="toggleAlgSettings()">Cancel</button>
+    <button class="primary" id="edSave">Save as new program</button>
+    <button id="edClose">Close</button>
   </div>
 </div>
 
+<!-- MANUAL -->
 <div class="card">
   <div class="card-header">
-    <div class="card-header-icon" style="background:rgba(56,189,248,0.15);">
-      <svg fill="none" stroke="currentColor" stroke-width="2" style="color:var(--accent-blue);" viewBox="0 0 24 24"><polyline points="3,17 9,11 13,15 21,7"/><polyline points="15,7 21,7 21,13"/></svg>
+    <div class="card-header-icon" style="background:rgba(249,115,22,0.15);">
+      <svg fill="none" stroke="currentColor" stroke-width="2" style="color:var(--accent-orange);" viewBox="0 0 24 24"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
     </div>
-    <h2>Temperature History</h2>
-    <div class="legend" id="chartLegend" style="margin-left:auto; margin-bottom:0;">
-      <span><span class="dot" style="background:var(--accent-blue);"></span>LOW</span>
-      <span><span class="dot" style="background:var(--accent-red);"></span>HIGH</span>
-      <span><span class="dot" style="background:var(--accent-yellow);"></span>TREND</span>
-      <span><span class="dot" style="background:var(--accent-red); width:14px; height:14px;"></span>SENSOR</span>
+    <h2>Manual Control</h2>
+  </div>
+  <div class="btn-row">
+    <button id="btnTest">Test mode</button>
+    <button id="btnNight">Night mode</button>
+    <button id="btnExit" disabled>Back to program</button>
+  </div>
+  <div id="manualPanel" style="display:none;">
+    <div class="sliders" id="sliders"></div>
+    <div class="btn-row" style="margin-top:10px;" id="nightPresetRow">
+      <button id="btnSavePreset">Save as night preset</button>
     </div>
   </div>
+</div>
 
-  <div class="chart-sub-title">Hourly (rolling 24h)</div>
-  <div class="chart-body">
-    <button class="chart-nav-btn" id="prevBtnHourly" title="Older">&#9664;</button>
-    <div class="chart-yaxis" id="yAxisHourly"></div>
-    <div class="chart-scroll" id="scrollHourly">
-      <div class="chart-inner" id="innerHourly">
-        <svg class="plot-svg" id="svgHourly"></svg>
-        <div class="chart-labels" id="labelsHourly"></div>
-      </div>
-    </div>
-    <button class="chart-nav-btn" id="nextBtnHourly" title="Newer">&#9654;</button>
+<button id="settingsBtn" class="settings-toggle-btn">⚙ Settings</button>
+
+<div class="card" id="settingsPanel" style="display:none;">
+  <div class="settings-title">Lamp</div>
+  <div class="settings-grid">
+    <label class="settings-field">Ramp time [s]<input type="number" step="1" id="ramp_s"></label>
+    <label class="settings-field">Fan ON at power ≥ [%]<input type="number" step="1" min="0" max="100" id="fan_on_pct"></label>
+    <label class="settings-field">Fan OFF at power &lt; [%]<input type="number" step="1" min="0" max="100" id="fan_off_pct"></label>
   </div>
-
-  <div class="chart-sub-title">Daily (~1 year)</div>
-  <div class="chart-body">
-    <button class="chart-nav-btn" id="prevBtnDaily" title="Older">&#9664;</button>
-    <div class="chart-yaxis" id="yAxisDaily"></div>
-    <div class="chart-scroll" id="scrollDaily">
-      <div class="chart-inner" id="innerDaily">
-        <svg class="plot-svg" id="svgDaily"></svg>
-        <div class="chart-labels" id="labelsDaily"></div>
-      </div>
-    </div>
-    <button class="chart-nav-btn" id="nextBtnDaily" title="Newer">&#9654;</button>
+  <div class="settings-title" style="margin-top:16px;">Channels</div>
+  <div class="settings-grid" id="chSettings"></div>
+  <div class="btn-row" style="margin-top:10px;">
+    <button class="primary" id="btnSaveSettings">Save</button>
+    <button type="button" id="btnCancelSettings">Cancel</button>
   </div>
-
-  <button id="btnLoadCharts" style="margin-top:14px;">Refresh Charts</button>
 </div>
 
 <div class="modal-overlay" id="alertModal">
@@ -396,15 +406,7 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
 </div>
 
 <script>
-// AlarmEventType w algorithm_config.h — jeden wpis = fakt wystąpienia, bez start/end
-const ALARM_EVENT_NAMES = ['LOW','HIGH','TREND','SENSOR'];
-
-// Mirror FAN_MANUAL_DEFAULT_PCT z algorithm_config.h — brak mechanizmu
-// wstrzykiwania #define do PROGMEM, wartość trzeba synchronizować ręcznie.
-const FAN_MANUAL_DEFAULT_PCT = 50;
-const FAN_STEP_PCT = 5;
-
-// ── Modal boxes (zamiast alert()/confirm()) ─────────────────────────────
+// ── Modal boxes (zamiast alert()/confirm()) — wzorzec z termostatu ──────
 const MODAL_ICONS = {
   ok:   '<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22,4 12,14.01 9,11.01"/></svg>',
   err:  '<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>',
@@ -415,8 +417,6 @@ let alertCallback = null;
 let alertAutoHideTimer = null;
 const ALERT_AUTO_HIDE_MS = 1500;
 
-// Auto-hide tylko dla showAlert (czysto informacyjny modal) — showConfirm
-// wymaga jawnej decyzji (Confirm/Cancel), więc nigdy nie znika sam.
 function showAlert(title, msg, type) {
   clearTimeout(alertAutoHideTimer);
   document.getElementById('alertIcon').className = 'modal-icon ' + type;
@@ -448,479 +448,521 @@ function closeAlert(confirmed) {
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeAlert(); });
 document.addEventListener('click', (e) => { if (e.target.id === 'alertModal') closeAlert(); });
 
-// ── Lock edycji GUI (PIN, osobny od hasła logowania) ────────────────────
-const LOCK_TIMEOUT_MS = 5 * 60 * 1000;
-let isLocked = true, lockTimer = null, lockUnlockAt = 0;
-let lockFailedAttempts = 0, lockThrottleUntil = 0, _lockCdInt = null;
+// ── API ──────────────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const CH = ['A', 'B', 'C', 'D'];
+const CH_COLORS = ['#ffff66', '#cc33ff', '#0066ff', '#00ffcc'];
 
-function toggleLock() { if (isLocked) showLockForm(); else setLocked(true); }
-function showLockForm() {
-  document.getElementById('lockFormBar').classList.add('visible');
-  const i = document.getElementById('lockPwdInput'); i.value = ''; i.focus();
-  document.getElementById('lockFormMsg').textContent = '';
+async function apiGet(url) {
+  const r = await fetch(url);
+  if (r.status === 401) { window.location.href = 'login'; throw new Error('unauthorized'); }
+  return r.json();
 }
-function hideLockForm() {
-  document.getElementById('lockFormBar').classList.remove('visible');
-  document.getElementById('lockPwdInput').value = '';
-  document.getElementById('lockFormMsg').textContent = '';
+async function apiPost(url, params) {
+  const r = await fetch(url, { method: 'POST', body: new URLSearchParams(params || {}) });
+  if (r.status === 401) { window.location.href = 'login'; throw new Error('unauthorized'); }
+  let j = {};
+  try { j = await r.json(); } catch (e) {}
+  if (!r.ok || j.success === false) throw new Error(j.error || ('HTTP ' + r.status));
+  return j;
 }
-function setLocked(locked) {
-  isLocked = locked;
-  if (locked) {
-    clearTimeout(lockTimer); lockTimer = null;
-    clearInterval(_lockCdInt); _lockCdInt = null;
-    hideLockForm();
-  } else {
-    lockUnlockAt = Date.now() + LOCK_TIMEOUT_MS;
-    resetLockTimer();
-    startLockCountdown();
-    hideLockForm();
-  }
-  updateLockUI();
-}
-function resetLockTimer() {
-  if (isLocked) return;
-  clearTimeout(lockTimer);
-  lockUnlockAt = Date.now() + LOCK_TIMEOUT_MS;
-  lockTimer = setTimeout(() => setLocked(true), LOCK_TIMEOUT_MS);
-}
-function lockMinsLeft() { return Math.max(1, Math.ceil((lockUnlockAt - Date.now()) / 60000)); }
-function startLockCountdown() {
-  clearInterval(_lockCdInt);
-  _lockCdInt = setInterval(() => { if (isLocked) clearInterval(_lockCdInt); else updateLockUI(); }, 60000);
-}
-function updateLockUI() {
-  const btn = document.getElementById('lockBtn');
-  if (isLocked) { btn.className = 'lock-btn locked'; btn.textContent = 'LOCKED'; }
-  else { btn.className = 'lock-btn unlocked'; btn.textContent = 'EDITING · ' + lockMinsLeft() + 'm'; }
-  document.body.classList.toggle('editing-locked', isLocked);
-}
-function submitUnlock() {
-  if (Date.now() < lockThrottleUntil) {
-    document.getElementById('lockFormMsg').textContent = 'Wait ' + Math.ceil((lockThrottleUntil - Date.now()) / 1000) + 's…';
-    return;
-  }
-  const inp = document.getElementById('lockPwdInput');
-  const msg = document.getElementById('lockFormMsg');
-  if (!inp.value) { inp.focus(); return; }
-  fetch('api/verify-pin', { method: 'POST', body: new URLSearchParams({ pin: inp.value }) })
-    .then(r => r.json()).then(d => {
-      if (d.success) { lockFailedAttempts = 0; setLocked(false); }
-      else {
-        lockFailedAttempts++;
-        inp.value = ''; inp.focus();
-        inp.classList.add('error', 'shake-inp');
-        setTimeout(() => inp.classList.remove('error', 'shake-inp'), 400);
-        if (lockFailedAttempts >= 3) { lockThrottleUntil = Date.now() + 30000; lockFailedAttempts = 0; msg.textContent = 'Too many attempts. Wait 30s.'; }
-        else msg.textContent = 'Wrong PIN (' + (3 - lockFailedAttempts) + ' left)';
-      }
-    }).catch(() => { msg.textContent = 'Error'; });
+const pct = v100 => (v100 / 100).toFixed(v100 < 1000 ? 2 : 1);
+const hhmm = m => String(Math.floor(m / 60) % 24).padStart(2, '0') + ':' + String(Math.floor(m % 60)).padStart(2, '0');
+function fmtUptime(s) {
+  const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+  return (d ? d + 'd ' : '') + h + 'h ' + m + 'm';
 }
 
-// Włącza/wyłącza stepper (div, nie <button> — .disabled CSS samo w sobie
-// wystarczy przez pointer-events:none, ale disabled na wewnętrznych
-// przyciskach robimy jawnie, żeby nie polegać wyłącznie na dziedziczeniu CSS).
-function setStepperEnabled(el, enabled) {
-  el.classList.toggle('disabled', !enabled);
-  el.querySelectorAll('button').forEach(b => { b.disabled = !enabled; });
-}
+// ── Status ───────────────────────────────────────────────────────────────
+let lastStatus = null;
+let manualMode = 'program';
 
-// ── Status / refresh ────────────────────────────────────────────────────
-let currentFanPct = 0;
-let currentHeaterOn = false;
-let currentFanOn = false;
-let serviceModeActive = false;
-let lastEnergyKwhStr = null;
+(function buildBars() {
+  $('chBars').innerHTML = CH.map((c, i) =>
+    '<div class="ch-bar"><b style="color:' + CH_COLORS[i] + '">' + c + '</b>' +
+    '<div class="ch-track"><div class="ch-fill" id="bar' + i + '" style="background:' + CH_COLORS[i] + '"></div></div>' +
+    '<span class="ch-val" id="val' + i + '">--</span></div>').join('');
+})();
 
 async function refresh() {
-  try {
-    const r = await fetch('api/status');
-    if (r.status === 401) { window.location.href = 'login'; return; }
-    const d = await r.json();
-    document.getElementById('temp').textContent = d.temp_c.toFixed(1) + '°C';
-    document.getElementById('state').textContent = d.state;
-    document.getElementById('heater').textContent = d.heater_on ? 'ON' : 'OFF';
-    document.getElementById('fan').textContent = d.fan_pct + '%';
-    document.getElementById('fanStepVal').textContent = d.fan_pct + '%';
-    currentFanPct = d.fan_pct;
-
-    // Przyciski bistabilne — label pokazuje stan BIEŻĄCY, klik wysyła przeciwny.
-    currentHeaterOn = d.heater_on;
-    currentFanOn = d.fan_pct > 0;
-    document.getElementById('heaterToggle').textContent = 'Heater: ' + (currentHeaterOn ? 'ON' : 'OFF');
-    document.getElementById('fanToggle').textContent = 'Fan: ' + (currentFanOn ? 'ON' : 'OFF');
-    document.getElementById('heater').classList.toggle('idle', currentHeaterOn);
-    document.getElementById('fan').classList.toggle('idle', currentFanOn);
-
-    // Przycisk pokazuje stan BIEŻĄCY (nie cel kliknięcia) — Service Mode
-    // dostaje ostrzegawczy pomarańcz (wzorzec .btn-service z dolewki).
-    // Countdown do auto-enable — sekundy liczone przez backend (getSystemAutoEnableRemainingS()),
-    // więc niezależne od tego, ile klientów GUI ma otwartą stronę; odświeża się w rytmie
-    // pollingu refresh() (5s), bez lokalnego setInterval co sekundę.
-    const sysBtn = document.getElementById('btnSystemToggle');
-    sysBtn.textContent = d.system_disabled
-      ? 'Service Mode' + (d.auto_enable_remaining_s > 0 ? ' (' + d.auto_enable_remaining_s + 's)' : '')
-      : 'Auto Mode';
-    sysBtn.classList.toggle('btn-service', d.system_disabled);
-
-    // Ręczne sterowanie (heater/fan) — aktywne TYLKO w Service Mode, z tym
-    // samym pomarańczowym oznaczeniem tła co przycisk System (user, 2026-07-15).
-    serviceModeActive = d.system_disabled;
-    document.querySelectorAll('.manual-ctrl').forEach(el => {
-      if (el.tagName === 'BUTTON') el.disabled = !serviceModeActive;
-      el.classList.toggle('btn-service', serviceModeActive);
-    });
-    document.getElementById('fanStepper').classList.toggle('active', serviceModeActive);
-    setStepperEnabled(document.getElementById('fanStepper'), serviceModeActive);
-
-    const flags = [];
-    if (d.alarm_flags & 0x01) flags.push('TEMP_LOW');
-    if (d.alarm_flags & 0x02) flags.push('TEMP_HIGH');
-    if (d.alarm_flags & 0x04) flags.push('TREND');
-    if (d.alarm_flags & 0x08) flags.push('SENSOR');
-    document.getElementById('alarms').textContent = flags.length ? flags.join(', ') : 'none';
-    document.getElementById('alarms').classList.toggle('alarm', flags.length > 0);
-    document.getElementById('sensorFaultBanner').style.display = d.sensor_fault_latched ? 'block' : 'none';
-
-    const hasError = (d.alarm_flags !== 0) || d.sensor_fault_latched;
-
-    // Kolor #temp wg stanu — priorytet: alarm (LOW dostaje wyraźny ciemny
-    // niebieski zamiast czerwieni, żeby odróżnić od HIGH/TREND/SENSOR mimo
-    // że tło karty i tak jest czerwone dla każdego z nich) > heating > buffer > cooling.
-    // fan_pct > 0 pokrywa dokładnie zakres fan_on_point..alarm_delta_high —
-    // in_buffer_zone jest false w tym zakresie (patrz web_handlers.cpp), więc
-    // bez tej gałęzi temperatura wyglądała na "białą"/neutralną mimo aktywnego fana.
-    const tempEl = document.getElementById('temp');
-    tempEl.classList.remove('temp-heating', 'temp-buffer', 'temp-cooling', 'temp-alarm', 'temp-alarm-low');
-    if (hasError) {
-      tempEl.classList.add((d.alarm_flags & 0x01) ? 'temp-alarm-low' : 'temp-alarm');
-    } else if (d.heater_on) {
-      tempEl.classList.add('temp-heating');
-    } else if (d.in_buffer_zone) {
-      tempEl.classList.add('temp-buffer');
-    } else if (d.fan_pct > 0) {
-      tempEl.classList.add('temp-cooling');
-    }
-
-    const statusMain = document.getElementById('statusMain');
-    statusMain.className = 'status-main';
-    statusMain.classList.add(hasError ? 'status-error' : d.system_disabled ? 'status-disabled' : 'status-ok');
-
-    document.getElementById('wifiItem').className = 'status-main-wifi ' + (d.wifi_connected ? 'wifi-on' : 'wifi-off');
-
-    const e = await fetch('api/energy');
-    const en = await e.json();
-    const kwhStr = en.total_kwh.toFixed(2);
-    const totalEl = document.getElementById('energy_total');
-    // "Heartbeat": pulsujący flash TYLKO gdy zaokrąglona wartość faktycznie
-    // przeskoczyła o kolejne 0.01 kWh (nie na każdym pollu co 5s) — daje
-    // wizualne potwierdzenie zliczenia impulsów, jak mrugająca dioda licznika.
-    if (lastEnergyKwhStr !== null && kwhStr !== lastEnergyKwhStr) {
-      const valueEl = totalEl.closest('.energy-total-value');
-      valueEl.classList.remove('energy-tick');
-      void valueEl.offsetWidth; // restart animacji, gdyby poprzednia jeszcze trwała
-      valueEl.classList.add('energy-tick');
-    }
-    lastEnergyKwhStr = kwhStr;
-    totalEl.textContent = kwhStr;
-    document.getElementById('energyResetTs').textContent = formatResetTs(en.reset_ts);
-  } catch(err) { console.error(err); }
-}
-
-// Kasowanie licznika: godzina/dzień/miesiąc/rok, świadomie bez minut/sekund.
-function formatResetTs(ts) {
-  if (!ts) return 'never';
-  const d = new Date(ts * 1000);
-  const hh = String(d.getHours()).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  return `${hh}h · ${dd}.${mm}.${d.getFullYear()}`;
-}
-
-async function loadThermoConfig() {
-  const r = await fetch('api/thermo-config');
-  const c = await r.json();
-  for (const k of ['target_temp','heat_hyst','cool_start','cool_full','thermal_buffer','fan_min_pct',
-                    'alarm_delta_low','alarm_delta_high','trend_alarm_delta','trend_window_min',
-                    'temp_offset','heater_watt','pulses_per_kwh']) {
-    if (c[k] !== undefined) document.getElementById(k).value = c[k];
-  }
-}
-
-function toggleAlgSettings() {
-  const panel = document.getElementById('algSettingsPanel');
-  panel.style.display = panel.style.display === 'none' ? '' : 'none';
-}
-
-// ── Wykresy temperatury: hourly + daily w jednej karcie (portowane z
-// chart_prototype/daily_alarms.html, 2026-07-17). Ręczne odświeżanie
-// przyciskiem "Refresh Charts" — bez pollingu, tak jak wcześniej tabele
-// hourly/daily/alarm-events, które ładowały się raz przy starcie strony.
-const ALARM_COLOR_VARS = { 0:'--accent-blue', 1:'--accent-red', 2:'--accent-yellow', 3:'--accent-red' };
-// Priorytet widoczności, gdy w jednym buckecie jest kilka typów alarmów naraz —
-// rysowany jest tylko punkt typu o najwyższym priorytecie: LOW=HIGH < TREND < SENSOR.
-const ALARM_PRIORITY = { 0:1, 1:1, 2:2, 3:3 };
-const CHART_PLOT_HEIGHT = 170, CHART_LABEL_ROW_H = 48, CHART_PLOT_PAD_Y = 18;
-const CHART_ALARM_R = 5, CHART_ALARM_R_SENSOR = 7;
-
-function cssVar(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
-
-// Ticki osi Y zaokrąglone w górę do pełnych stopni (1/2/5/10...), żeby
-// etykiety były całkowite i równo rozłożone zamiast np. 28.6°C / 26.8°C.
-function computeChartTicks(minRaw, maxRaw) {
-  const pad = Math.max(0.5, (maxRaw - minRaw) * 0.15);
-  let min = Math.floor(minRaw - pad);
-  let max = Math.ceil(maxRaw + pad);
-  if (max <= min) max = min + 1;
-  const TARGET_TICK_COUNT = 5;
-  const niceSteps = [1, 2, 5, 10, 20, 25, 50, 100];
-  const rawStep = (max - min) / (TARGET_TICK_COUNT - 1);
-  const step = niceSteps.find(s => s >= rawStep) || Math.ceil(rawStep / 50) * 50;
-  max = min + Math.ceil((max - min) / step) * step;
-  const ticks = [];
-  for (let v = min; v <= max; v += step) ticks.push(v);
-  return { min, max, ticks };
-}
-
-// Bucket = floor do pełnej godziny ('hour') albo lokalnej północy ('day').
-function bucketKey(ts, granularity) {
-  const d = new Date(ts * 1000);
-  if (granularity === 'hour') d.setMinutes(0, 0, 0); else d.setHours(0, 0, 0, 0);
-  return Math.floor(d.getTime() / 1000);
-}
-function bucketIndexFromTs(records, ts, granularity) {
-  const key = bucketKey(ts, granularity);
-  return records.findIndex(r => bucketKey(r.ts, granularity) === key);
-}
-
-function wireChartNavButtons(scrollArea, prevBtn, nextBtn) {
-  const step = () => scrollArea.clientWidth * 0.9;
-  prevBtn.onclick = () => scrollArea.scrollBy({ left: -step(), behavior: 'smooth' });
-  nextBtn.onclick = () => scrollArea.scrollBy({ left: step(), behavior: 'smooth' });
-  const updateBtns = () => {
-    prevBtn.disabled = scrollArea.scrollLeft <= 0;
-    nextBtn.disabled = scrollArea.scrollLeft >= scrollArea.scrollWidth - scrollArea.clientWidth - 1;
-  };
-  scrollArea.addEventListener('scroll', updateBtns);
-  window.addEventListener('resize', updateBtns);
-  updateBtns();
-}
-
-// records: oldest-first [{ts, temp_c}]. alarms: [{ts, temp_c, type}] (cała
-// zwrócona historia — filtrowana tu do bucketów obecnych w records).
-function renderChart(records, alarms, targetTemp, granularity, cellWidth, els) {
-  const n = records.length;
-  els.yAxis.innerHTML = ''; els.svg.innerHTML = ''; els.labels.innerHTML = '';
-  if (n === 0) return;
-  const totalWidth = n * cellWidth;
-  const svgNS = 'http://www.w3.org/2000/svg';
-
-  const temps = records.map(r => r.temp_c);
-  const { min: minT, max: maxT, ticks } = computeChartTicks(Math.min(...temps), Math.max(...temps));
-  const yFor = (t) => CHART_PLOT_PAD_Y + (maxT - t) / (maxT - minT) * (CHART_PLOT_HEIGHT - 2 * CHART_PLOT_PAD_Y);
-
-  els.yAxis.style.height = CHART_PLOT_HEIGHT + 'px';
-  ticks.forEach(v => {
-    const el = document.createElement('div');
-    el.className = 'tick';
-    el.style.top = yFor(v) + 'px';
-    el.textContent = v + '°C';
-    els.yAxis.appendChild(el);
+  let s;
+  try { s = await apiGet('api/status'); } catch (e) { return; }
+  lastStatus = s;
+  $('power').textContent = s.power_pct.toFixed(1) + '%';
+  const m = $('mode');
+  m.textContent = s.mode.toUpperCase() + (s.ramp ? ' ↗' : '');
+  m.className = 'badge ' + (s.mode === 'program' ? 'idle' : 'heating');
+  $('activeName').textContent = s.active_name;
+  const f = $('fan');
+  f.textContent = s.fan_on ? s.fan_pct + '%' : 'OFF';
+  f.className = 'badge ' + (s.fan_on ? 'cooling' : '');
+  $('clock').textContent = s.time_valid ? s.time.substring(11, 16) : 'no time';
+  s.channels.forEach((c, i) => {
+    $('bar' + i).style.width = (c.out / 100) + '%';
+    $('val' + i).textContent = pct(c.out) + '%';
   });
-  if (targetTemp !== undefined && targetTemp !== null) {
-    const el = document.createElement('div');
-    el.className = 'tick target-tick';
-    el.style.top = yFor(targetTemp) + 'px';
-    el.textContent = targetTemp.toFixed(1) + '°C';
-    els.yAxis.appendChild(el);
+  const wi = $('wifiItem');
+  wi.classList.toggle('wifi-on', s.wifi); wi.classList.toggle('wifi-off', !s.wifi);
+  const sm = $('statusMain');
+  const warn = !s.fram_ok || !s.time_valid || s.rtc_battery;
+  sm.className = 'status-main ' + (warn ? 'status-warn' : 'status-ok');
+  const r = s.resets;
+  $('diag').innerHTML =
+    'Time: <b>' + s.time + '</b> (' + s.time_src + (s.ntp_age_s !== null ? ', NTP ' + Math.round(s.ntp_age_s / 60) + ' min ago' : '') + ')<br>' +
+    'Uptime: <b>' + fmtUptime(s.uptime_s) + '</b> · Heap: <b>' + Math.round(s.heap / 1024) + ' KB</b> (min ' +
+    Math.round(s.heap_min / 1024) + ', largest ' + Math.round(s.heap_largest / 1024) + ')<br>' +
+    'Last reset: <b>' + s.reset_reason + '</b> · WDT ' + r.wdt + ' · panic ' + r.panic + ' · brownout ' + r.brownout + ' · other ' + r.other + '<br>' +
+    'FRAM: <b>' + (s.fram_ok ? 'OK' : 'ERROR') + '</b> · RTC: <b>' + (s.rtc_ok ? 'OK' : 'ERROR') + '</b>' +
+    (s.rtc_battery ? ' <span class="sub-danger">(battery?)</span>' : '') +
+    ' · RSSI ' + s.rssi + ' dBm · ' + s.ip + ' · FW ' + s.fw;
+  if (s.mode !== manualMode) setManualUI(s.mode, s.manual);
+  if (ed.open) drawCurve();
+}
+
+// ── Programy ─────────────────────────────────────────────────────────────
+let programs = [];
+let activeId = '';
+
+async function loadPrograms() {
+  const j = await apiGet('api/programs');
+  activeId = j.active_id;
+  programs = j.programs.sort((a, b) => a.name.localeCompare(b.name, 'pl', { sensitivity: 'base' }));
+  const list = $('progList');
+  list.innerHTML = '';
+  if (!j.active_in_library) {
+    const row = document.createElement('div');
+    row.className = 'prog-row active';
+    row.innerHTML = '<span class="prog-name"></span><span class="badge alarm">RAM only</span>';
+    row.querySelector('.prog-name').textContent = lastStatus ? lastStatus.active_name : 'Factory';
+    list.appendChild(row);
   }
-
-  els.inner.style.width = totalWidth + 'px';
-
-  const byBucket = {};
-  alarms.forEach(a => {
-    const idx = bucketIndexFromTs(records, a.ts, granularity);
-    if (idx < 0) return;
-    (byBucket[idx] = byBucket[idx] || []).push(a);
-  });
-
-  els.svg.setAttribute('width', totalWidth);
-  els.svg.setAttribute('height', CHART_PLOT_HEIGHT);
-
-  ticks.forEach(v => {
-    const line = document.createElementNS(svgNS, 'line');
-    line.setAttribute('x1', 0); line.setAttribute('x2', totalWidth);
-    line.setAttribute('y1', yFor(v)); line.setAttribute('y2', yFor(v));
-    line.setAttribute('stroke', cssVar('--border'));
-    line.setAttribute('stroke-width', '1');
-    els.svg.appendChild(line);
-  });
-
-  if (targetTemp !== undefined && targetTemp !== null) {
-    const targetY = yFor(targetTemp);
-    const targetLine = document.createElementNS(svgNS, 'line');
-    targetLine.setAttribute('x1', 0); targetLine.setAttribute('x2', totalWidth);
-    targetLine.setAttribute('y1', targetY); targetLine.setAttribute('y2', targetY);
-    targetLine.setAttribute('class', 'target-marker');
-    els.svg.appendChild(targetLine);
-  }
-
-  const nowLine = document.createElementNS(svgNS, 'line');
-  const nowX = (n - 1) * cellWidth + cellWidth / 2;
-  nowLine.setAttribute('x1', nowX); nowLine.setAttribute('x2', nowX);
-  nowLine.setAttribute('y1', 0); nowLine.setAttribute('y2', CHART_PLOT_HEIGHT);
-  nowLine.setAttribute('class', 'now-marker');
-  els.svg.appendChild(nowLine);
-
-  const points = records.map((r, i) => [i * cellWidth + cellWidth / 2, yFor(r.temp_c)]);
-  const poly = document.createElementNS(svgNS, 'polyline');
-  poly.setAttribute('points', points.map(p => p.join(',')).join(' '));
-  poly.setAttribute('fill', 'none');
-  poly.setAttribute('stroke', cssVar('--accent-cyan'));
-  poly.setAttribute('stroke-width', '1.5');
-  els.svg.appendChild(poly);
-
-  records.forEach((r, i) => {
-    const [x, y] = points[i];
-    const bucketEvents = byBucket[i];
-    if (bucketEvents) {
-      let topType = bucketEvents[0].type;
-      bucketEvents.forEach(a => { if ((ALARM_PRIORITY[a.type] ?? 1) > (ALARM_PRIORITY[topType] ?? 1)) topType = a.type; });
-      const marker = document.createElementNS(svgNS, 'circle');
-      marker.setAttribute('cx', x); marker.setAttribute('cy', y);
-      marker.setAttribute('r', topType === 3 ? CHART_ALARM_R_SENSOR : CHART_ALARM_R);
-      marker.setAttribute('fill', cssVar(ALARM_COLOR_VARS[topType]) || '#999');
-      const title = document.createElementNS(svgNS, 'title');
-      title.textContent = bucketEvents.map(a =>
-        `${ALARM_EVENT_NAMES[a.type] ?? a.type} @ ${new Date(a.ts * 1000).toLocaleString()} (${a.temp_c.toFixed(1)}°C)`
-      ).join('\n');
-      marker.appendChild(title);
-      els.svg.appendChild(marker);
+  programs.forEach(p => {
+    const row = document.createElement('div');
+    row.className = 'prog-row' + (p.active ? ' active' : '');
+    const name = document.createElement('span');
+    name.className = 'prog-name';
+    name.textContent = p.name;
+    row.appendChild(name);
+    if (p.factory) row.insertAdjacentHTML('beforeend', '<span class="badge cooling">factory</span>');
+    if (p.active) {
+      row.insertAdjacentHTML('beforeend', '<span class="badge idle">active</span>');
     } else {
-      const c = document.createElementNS(svgNS, 'circle');
-      c.setAttribute('cx', x); c.setAttribute('cy', y); c.setAttribute('r', 2.2);
-      c.setAttribute('fill', cssVar('--accent-cyan'));
-      const title = document.createElementNS(svgNS, 'title');
-      title.textContent = `${new Date(r.ts * 1000).toLocaleString()} — ${r.temp_c.toFixed(1)}°C`;
-      c.appendChild(title);
-      els.svg.appendChild(c);
+      const b = document.createElement('button');
+      b.className = 'primary'; b.textContent = 'Activate';
+      b.onclick = () => activate(p);
+      row.appendChild(b);
     }
+    const e = document.createElement('button');
+    e.textContent = 'Edit';
+    e.onclick = () => openEditor(p.id);
+    row.appendChild(e);
+    const d = document.createElement('button');
+    d.className = 'danger'; d.textContent = '✕';
+    d.disabled = p.active;
+    d.title = p.active ? 'Active program cannot be deleted' : 'Delete';
+    d.onclick = () => showConfirm('Delete program', '"' + p.name + '" will be removed from the library.', 'warn', () => del(p));
+    row.appendChild(d);
+    list.appendChild(row);
   });
-
-  els.labels.style.height = CHART_LABEL_ROW_H + 'px';
-  records.forEach((r, i) => {
-    const d = new Date(r.ts * 1000);
-    const cell = document.createElement('div');
-    cell.className = 'chart-label' + (i === n - 1 ? ' now' : '');
-    cell.style.width = cellWidth + 'px';
-    const span = document.createElement('span');
-    span.textContent = granularity === 'hour'
-      ? String(d.getHours()).padStart(2, '0') + ':00'
-      : String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0');
-    cell.appendChild(span);
-    els.labels.appendChild(cell);
-  });
-
-  els.scroll.scrollLeft = els.scroll.scrollWidth;
-  wireChartNavButtons(els.scroll, els.prevBtn, els.nextBtn);
+  $('progMeta').textContent = programs.length + ' / ' + j.capacity + ' programs';
 }
 
-const hourlyChartEls = {
-  yAxis: document.getElementById('yAxisHourly'), scroll: document.getElementById('scrollHourly'),
-  inner: document.getElementById('innerHourly'), svg: document.getElementById('svgHourly'),
-  labels: document.getElementById('labelsHourly'),
-  prevBtn: document.getElementById('prevBtnHourly'), nextBtn: document.getElementById('nextBtnHourly'),
-};
-const dailyChartEls = {
-  yAxis: document.getElementById('yAxisDaily'), scroll: document.getElementById('scrollDaily'),
-  inner: document.getElementById('innerDaily'), svg: document.getElementById('svgDaily'),
-  labels: document.getElementById('labelsDaily'),
-  prevBtn: document.getElementById('prevBtnDaily'), nextBtn: document.getElementById('nextBtnDaily'),
-};
-
-async function loadCharts() {
+async function activate(p) {
   try {
-    const [hr, dr, ar, cfg] = await Promise.all([
-      fetch('api/history-hourly').then(r => r.json()),
-      fetch('api/history-daily').then(r => r.json()),
-      fetch('api/alarm-events').then(r => r.json()),
-      fetch('api/thermo-config').then(r => r.json()),
-    ]);
-    const hourlyRecords = hr.records.slice().reverse();  // API: newest-first -> chart: oldest-first
-    const dailyRecords  = dr.records.slice().reverse();
-    renderChart(hourlyRecords, ar.events, cfg.target_temp, 'hour', 34, hourlyChartEls);
-    renderChart(dailyRecords,  ar.events, cfg.target_temp, 'day',  30, dailyChartEls);
-  } catch (err) { console.error(err); }
+    await apiPost('api/program-activate', { id: p.id });
+    showAlert('Activated', p.name, 'ok');
+    await loadPrograms(); refresh();
+  } catch (e) { showAlert('Error', e.message, 'err'); }
+}
+async function del(p) {
+  try {
+    await apiPost('api/program-delete', { id: p.id });
+    showAlert('Deleted', p.name, 'ok');
+    loadPrograms();
+  } catch (e) { showAlert('Error', e.message, 'err'); }
 }
 
-document.getElementById('heaterToggle').addEventListener('click', async () => {
-  await fetch('api/test/heater', { method: 'POST', body: new URLSearchParams({on: currentHeaterOn ? '0' : '1'}) });
-  refresh();
-});
-document.getElementById('fanToggle').addEventListener('click', async () => {
-  const pct = currentFanOn ? 0 : FAN_MANUAL_DEFAULT_PCT;
-  await fetch('api/test/fan', { method: 'POST', body: new URLSearchParams({pct: String(pct)}) });
-  refresh();
-});
-function stepFan(dir) {
-  if (!serviceModeActive) return;
-  let v = currentFanPct + dir * FAN_STEP_PCT;
-  v = Math.max(0, Math.min(100, v));
-  fetch('api/test/fan', { method: 'POST', body: new URLSearchParams({pct: String(v)}) }).then(refresh);
+// ── Edytor (port docs/curve_editor_linear.html) ──────────────────────────
+// v w % mocy kanału (0–100, 2 miejsca); w API setne procenta.
+const DAY_MIN = 1440, MAX_POINTS = 48, STEP_NORMAL = 2, STEP_FINE = 0.1;
+const HOLD_DELAY_MS = 350, HOLD_STEP_MS = 90, SHIFT_MIN = 10, SNAP_TOL = 8, MERGE_MIN = 1;
+const VIEW_START_DEFAULT = 480;
+const ed = { open: false, chans: [[], [], [], []], cur: 2, carriage: 720, fine: false,
+             viewStart: VIEW_START_DEFAULT, viewEnd: DAY_MIN, parent: '', drag: null };
+const round2 = x => Math.round(x * 100) / 100;
+const clampV = x => Math.max(0, Math.min(100, x));
+const pts = () => ed.cur < 0 ? [] : ed.chans[ed.cur];
+
+function evalPts(p, t) {
+  const n = p.length;
+  if (!n) return 0;
+  if (t <= p[0].t) return p[0].v;
+  if (t >= p[n - 1].t) return p[n - 1].v;
+  let lo = 0, hi = n - 1;
+  while (hi - lo > 1) { const mid = (lo + hi) >> 1; p[mid].t <= t ? lo = mid : hi = mid; }
+  const h = p[hi].t - p[lo].t;
+  if (h < 1e-9) return p[lo].v;
+  return p[lo].v + (p[hi].v - p[lo].v) * (t - p[lo].t) / h;
+}
+const getV = (t, i = ed.cur) => clampV(evalPts(ed.chans[i], t));
+
+async function openEditor(id) {
+  try {
+    const j = await apiGet('api/program?id=' + id);
+    ed.chans = CH.map(c => j[c].map(p => ({ t: p[0], v: p[1] / 100 })));
+    ed.parent = j.id;
+    $('edName').value = j.name;
+    $('edTitle').textContent = 'Editor — ' + j.name;
+    $('edCard').style.display = '';
+    ed.open = true;
+    resizeCanvas();
+    updateAll();
+    $('edCard').scrollIntoView({ behavior: 'smooth' });
+  } catch (e) { showAlert('Error', e.message, 'err'); }
+}
+$('edClose').onclick = () => { ed.open = false; $('edCard').style.display = 'none'; };
+
+// Przesunięcie całej krzywej aktywnego kanału o dt minut, doba cykliczna
+function shiftCurve(dt) {
+  if (ed.cur < 0) return;
+  const wrap = t => ((t % DAY_MIN) + DAY_MIN) % DAY_MIN;
+  const v0 = round2(getV(wrap(-dt)));
+  const inner = [];
+  for (const p of pts()) {
+    if (p.t <= 0 || p.t >= DAY_MIN) continue;
+    const t = wrap(p.t + dt);
+    if (t !== 0) inner.push({ t, v: p.v });
+  }
+  inner.sort((a, b) => a.t - b.t);
+  const merged = [];
+  for (const p of inner) if (!merged.length || p.t - merged[merged.length - 1].t >= MERGE_MIN) merged.push(p);
+  ed.chans[ed.cur] = [{ t: 0, v: v0 }, ...merged, { t: DAY_MIN, v: v0 }];
+  updateAll();
 }
 
-document.getElementById('btnSystemToggle').addEventListener('click', async () => {
-  await fetch('api/system-toggle', { method: 'POST' });
-  refresh();
-});
-document.getElementById('btnAck').addEventListener('click', async () => {
-  await fetch('api/mute-alarm', { method: 'POST' });
-  refresh();
-});
-document.getElementById('btnResetSensor').addEventListener('click', () => {
-  showConfirm('Reset sensor fault?', 'Sensor fault is a critical alarm — confirm only if the fault has actually been fixed.', 'warn', async () => {
-    await fetch('api/reset-sensor-fault', { method: 'POST' });
-    refresh();
+function findNearbyIdx(t) {
+  const P = pts();
+  for (let i = 1; i < P.length - 1; i++) if (Math.abs(P[i].t - t) <= SNAP_TOL) return i;
+  return null;
+}
+
+function changeValue(delta) {
+  if (ed.cur < 0) return;
+  const P = pts();
+  const t = Math.round(ed.carriage);
+  const idx = findNearbyIdx(t);
+  if (idx !== null) {
+    P[idx].v = round2(clampV(P[idx].v + delta));
+  } else {
+    if (P.some(p => p.t === t) || t <= 0 || t >= DAY_MIN || P.length >= MAX_POINTS) return;
+    P.push({ t, v: round2(clampV(getV(t) + delta)) });
+    P.sort((a, b) => a.t - b.t);
+  }
+  updateAll();
+}
+
+// Canvas (CSS px, skalowanie devicePixelRatio)
+const canvas = $('edCanvas');
+const ctx = canvas.getContext('2d');
+const PAD = { l: 8, r: 8, t: 32, b: 24 };
+let W = 0, H = 0;
+function resizeCanvas() {
+  const dpr = window.devicePixelRatio || 1;
+  W = canvas.clientWidth; H = canvas.clientHeight;
+  canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  drawCurve();
+}
+window.addEventListener('resize', () => { if (ed.open) { resizeCanvas(); positionCarriage(); } });
+const cX = t => PAD.l + ((t - ed.viewStart) / (ed.viewEnd - ed.viewStart)) * (W - PAD.l - PAD.r);
+const cY = v => PAD.t + (1 - v / 100) * (H - PAD.t - PAD.b);
+
+function tracePath(i) {
+  ctx.beginPath();
+  ctx.moveTo(cX(ed.viewStart), cY(getV(ed.viewStart, i)));
+  for (let t = ed.viewStart + 2; t <= ed.viewEnd; t += 2) ctx.lineTo(cX(t), cY(getV(t, i)));
+}
+
+function drawCurve() {
+  if (!ed.open || !W) return;
+  ctx.clearRect(0, 0, W, H);
+  ctx.lineWidth = 1; ctx.font = '10px monospace';
+  const span = ed.viewEnd - ed.viewStart;
+  const gridStep = span <= 240 ? 30 : span <= 480 ? 60 : 240;
+  for (let t = Math.ceil(ed.viewStart / gridStep) * gridStep; t <= ed.viewEnd; t += gridStep) {
+    ctx.strokeStyle = '#1e293b';
+    ctx.beginPath(); ctx.moveTo(cX(t), PAD.t); ctx.lineTo(cX(t), H - PAD.b); ctx.stroke();
+    ctx.fillStyle = '#94a3b8'; ctx.fillText(hhmm(t), cX(t) - 13, H - 6);
+  }
+  // linia "teraz"
+  if (lastStatus && lastStatus.time_valid && lastStatus.minute >= ed.viewStart) {
+    ctx.strokeStyle = '#22d3d5'; ctx.globalAlpha = 0.5; ctx.setLineDash([2, 4]);
+    ctx.beginPath(); ctx.moveTo(cX(lastStatus.minute), PAD.t); ctx.lineTo(cX(lastStatus.minute), H - PAD.b); ctx.stroke();
+    ctx.setLineDash([]); ctx.globalAlpha = 1;
+  }
+  CH.forEach((c, i) => {
+    if (i === ed.cur) return;
+    tracePath(i);
+    ctx.strokeStyle = CH_COLORS[i]; ctx.globalAlpha = ed.cur < 0 ? 0.9 : 0.28; ctx.lineWidth = ed.cur < 0 ? 1.5 : 1; ctx.stroke();
+    ctx.globalAlpha = 1;
   });
-});
-document.getElementById('btnEnergyReset').addEventListener('click', () => {
-  showConfirm('Reset total energy counter?', 'This permanently zeroes the total kWh counter. This cannot be undone.', 'warn', async () => {
-    await fetch('api/energy-reset-total', { method: 'POST' });
-    refresh();
+  if (ed.cur >= 0) {
+    const col = CH_COLORS[ed.cur];
+    tracePath(ed.cur);
+    ctx.lineTo(cX(ed.viewEnd), H - PAD.b); ctx.lineTo(cX(ed.viewStart), H - PAD.b); ctx.closePath();
+    ctx.fillStyle = col; ctx.globalAlpha = 0.07; ctx.fill(); ctx.globalAlpha = 1;
+    tracePath(ed.cur);
+    ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.stroke();
+    const nearby = findNearbyIdx(Math.round(ed.carriage));
+    pts().forEach((p, i) => {
+      if (p.t < ed.viewStart || p.t > ed.viewEnd) return;
+      const edge = p.t === 0 || p.t === DAY_MIN, hl = i === nearby;
+      ctx.beginPath();
+      ctx.arc(cX(p.t), cY(p.v), hl ? 7 : (edge ? 3 : 5), 0, Math.PI * 2);
+      ctx.fillStyle = hl ? '#fff' : (edge ? '#2a2a2a' : col);
+      ctx.strokeStyle = '#0a0f1a'; ctx.lineWidth = 1.5; ctx.fill(); ctx.stroke();
+    });
+  }
+  // karetka
+  const kx = cX(ed.carriage);
+  ctx.setLineDash([3, 3]);
+  ctx.beginPath(); ctx.moveTo(kx, PAD.t); ctx.lineTo(kx, H - PAD.b);
+  ctx.strokeStyle = '#f97316'; ctx.lineWidth = 1; ctx.stroke();
+  ctx.setLineDash([]);
+  (ed.cur < 0 ? [0, 1, 2, 3] : [ed.cur]).forEach(i => {
+    ctx.beginPath(); ctx.arc(kx, cY(getV(ed.carriage, i)), 4, 0, Math.PI * 2);
+    ctx.fillStyle = ed.cur < 0 ? CH_COLORS[i] : '#f97316'; ctx.fill();
   });
+  // odczyty: v% lewy-góra, czas prawy-góra
+  ctx.font = 'bold 18px monospace'; ctx.fillStyle = '#f1f5f9'; ctx.textBaseline = 'top';
+  ctx.textAlign = 'left';
+  const v = ed.cur < 0 ? null : getV(ed.carriage);
+  ctx.fillText(v === null ? '--%' : (ed.fine ? v.toFixed(2) : Math.round(v)) + '%', 10, 8);
+  ctx.textAlign = 'right';
+  ctx.fillText(hhmm(ed.carriage), W - 10, 8);
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+}
+canvas.addEventListener('click', () => { if (ed.cur >= 0) { ed.cur = -1; updateAll(); } });
+
+// Karetka
+const track = $('edTrack'), carriage = $('edCarriage');
+function positionCarriage() {
+  const tw = track.clientWidth, cw = carriage.offsetWidth;
+  const frac = (ed.carriage - ed.viewStart) / (ed.viewEnd - ed.viewStart);
+  carriage.style.left = Math.max(0, Math.min(tw - cw, frac * tw - cw / 2)) + 'px';
+}
+function dragStart(x) { ed.drag = { startX: x, startMins: ed.carriage }; carriage.classList.add('dragging'); }
+function dragMove(x) {
+  if (!ed.drag) return;
+  const d = ((x - ed.drag.startX) / track.clientWidth) * (ed.viewEnd - ed.viewStart);
+  ed.carriage = Math.max(ed.viewStart, Math.min(ed.viewEnd, ed.drag.startMins + d));
+  updateAll();
+}
+function dragEnd() { ed.drag = null; carriage.classList.remove('dragging'); }
+carriage.addEventListener('mousedown', e => { e.preventDefault(); dragStart(e.clientX); });
+document.addEventListener('mousemove', e => dragMove(e.clientX));
+document.addEventListener('mouseup', dragEnd);
+carriage.addEventListener('touchstart', e => { e.preventDefault(); dragStart(e.touches[0].clientX); }, { passive: false });
+document.addEventListener('touchmove', e => { if (ed.drag) { e.preventDefault(); dragMove(e.touches[0].clientX); } }, { passive: false });
+document.addEventListener('touchend', dragEnd);
+
+// Środkowy klawisz: ✕ gdy karetka stoi na punkcie, ＋ gdy go nie ma
+function centerState() {
+  if (ed.cur < 0) return 'off';
+  const t = Math.round(ed.carriage);
+  if (findNearbyIdx(t) !== null) return 'del';
+  if (t <= 0 || t >= DAY_MIN || pts().length >= MAX_POINTS) return 'off';
+  return 'add';
+}
+function updatePad() {
+  const st = centerState(), b = $('edDel');
+  b.classList.toggle('mode-del', st === 'del');
+  b.classList.toggle('mode-add', st === 'add');
+  b.textContent = st === 'del' ? '✕' : '＋';
+  b.style.opacity = st === 'off' ? '0.25' : '1';
+  CH.forEach((c, i) => {
+    const cb = $('edCh' + i);
+    cb.style.setProperty('--c', CH_COLORS[i]);
+    cb.classList.toggle('active', i === ed.cur);
+  });
+  const off = ed.cur < 0 ? '0.25' : '1';
+  ['edUp', 'edDown', 'edLeft', 'edRight'].forEach(id => $(id).style.opacity = off);
+  $('edFine').classList.toggle('on', ed.fine);
+  $('edView').textContent = ed.viewStart === 0 ? '00–24' : '08–24';
+}
+function updateAll() { positionCarriage(); drawCurve(); updatePad(); }
+
+$('edDel').addEventListener('click', () => {
+  const st = centerState();
+  if (st === 'del') { pts().splice(findNearbyIdx(Math.round(ed.carriage)), 1); updateAll(); }
+  else if (st === 'add') changeValue(0);
 });
-document.getElementById('btnLogout').addEventListener('click', async () => {
+// Przytrzymanie ▲/▼: krok od razu, potem ciągła zmiana co HOLD_STEP_MS
+function bindHold(el, fn) {
+  let delayTimer = null, repeatTimer = null;
+  const stop = () => { clearTimeout(delayTimer); clearInterval(repeatTimer); delayTimer = repeatTimer = null; };
+  const start = e => {
+    e.preventDefault();
+    fn();
+    delayTimer = setTimeout(() => { repeatTimer = setInterval(fn, HOLD_STEP_MS); }, HOLD_DELAY_MS);
+  };
+  el.addEventListener('mousedown', start);
+  el.addEventListener('touchstart', start, { passive: false });
+  ['mouseup', 'mouseleave', 'touchend', 'touchcancel'].forEach(ev => el.addEventListener(ev, stop));
+}
+const step = () => ed.fine ? STEP_FINE : STEP_NORMAL;
+bindHold($('edUp'), () => changeValue(+step()));
+bindHold($('edDown'), () => changeValue(-step()));
+$('edLeft').addEventListener('click', () => shiftCurve(-SHIFT_MIN));
+$('edRight').addEventListener('click', () => shiftCurve(+SHIFT_MIN));
+CH.forEach((c, i) => $('edCh' + i).addEventListener('click', () => { ed.cur = i; updateAll(); }));
+$('edFine').onclick = () => { ed.fine = !ed.fine; updateAll(); };
+$('edView').onclick = () => {
+  ed.viewStart = ed.viewStart === 0 ? VIEW_START_DEFAULT : 0;
+  ed.carriage = Math.max(ed.viewStart, ed.carriage);
+  updateAll();
+};
+
+$('edSave').onclick = async () => {
+  const name = $('edName').value.trim();
+  if (!name) { showAlert('Name required', 'Enter a program name.', 'warn'); return; }
+  const params = { name, parent: ed.parent };
+  ['ch_a', 'ch_b', 'ch_c', 'ch_d'].forEach((k, i) => {
+    params[k] = ed.chans[i].map(p => p.t + ':' + Math.round(p.v * 100)).join(',');
+  });
+  try {
+    const j = await apiPost('api/program-save', params);
+    await loadPrograms();
+    ed.parent = j.id;
+    showConfirm('Saved', '"' + name + '" saved as a new program. Activate it now?', 'ok',
+                () => activate({ id: j.id, name }));
+  } catch (e) { showAlert('Save failed', e.message, 'err'); }
+};
+
+// ── Tryb ręczny ──────────────────────────────────────────────────────────
+let manualValues = [0, 0, 0, 0];
+let manualTimer = null;
+
+(function buildSliders() {
+  $('sliders').innerHTML = CH.map((c, i) =>
+    '<div class="slider-col" style="--c:' + CH_COLORS[i] + '"><span class="lbl">' + c + '</span>' +
+    '<input type="range" min="0" max="10000" step="100" id="sl' + i + '">' +
+    '<span class="val" id="slv' + i + '">0%</span></div>').join('');
+  CH.forEach((c, i) => $('sl' + i).addEventListener('input', e => {
+    manualValues[i] = +e.target.value;
+    $('slv' + i).textContent = pct(manualValues[i]) + '%';
+    clearTimeout(manualTimer);
+    manualTimer = setTimeout(sendManual, 150);
+  }));
+})();
+
+function sendManual() {
+  apiPost('api/manual-set', { ch_a: manualValues[0], ch_b: manualValues[1], ch_c: manualValues[2], ch_d: manualValues[3] })
+    .catch(e => showAlert('Error', e.message, 'err'));
+}
+
+function setManualUI(mode, values) {
+  manualMode = mode;
+  const manual = mode !== 'program';
+  $('manualPanel').style.display = manual ? '' : 'none';
+  $('btnExit').disabled = !manual;
+  $('btnTest').classList.toggle('on', mode === 'test');
+  $('btnNight').classList.toggle('on', mode === 'night');
+  $('nightPresetRow').style.display = mode === 'night' ? '' : 'none';
+  if (values) manualValues = values.slice();
+  CH.forEach((c, i) => {
+    const s = $('sl' + i);
+    s.step = mode === 'night' ? 10 : 100;
+    s.value = manualValues[i];
+    $('slv' + i).textContent = pct(manualValues[i]) + '%';
+  });
+}
+
+async function enterManual(mode) {
+  try {
+    const j = await apiPost('api/manual-enter', { mode });
+    setManualUI(mode, j.values);
+    refresh();
+  } catch (e) { showAlert('Error', e.message, 'err'); }
+}
+$('btnTest').onclick = () => enterManual('test');
+$('btnNight').onclick = () => enterManual('night');
+$('btnExit').onclick = async () => {
+  try { await apiPost('api/manual-exit'); setManualUI('program', null); refresh(); }
+  catch (e) { showAlert('Error', e.message, 'err'); }
+};
+$('btnSavePreset').onclick = async () => {
+  try {
+    await apiPost('api/config', { night_a: manualValues[0], night_b: manualValues[1], night_c: manualValues[2], night_d: manualValues[3] });
+    showAlert('Saved', 'Night preset updated.', 'ok');
+  } catch (e) { showAlert('Error', e.message, 'err'); }
+};
+
+// ── Settings ─────────────────────────────────────────────────────────────
+(function buildChSettings() {
+  $('chSettings').innerHTML = CH.map((c, i) =>
+    '<label class="settings-field">' + c + ': power share [%]<input type="number" step="0.01" min="0" max="100" id="pf' + i + '"></label>' +
+    '<label class="settings-field">' + c + ': gamma<input type="number" step="0.01" min="0.2" max="4" id="ga' + i + '"></label>' +
+    '<label class="settings-field">' + c + ': min duty [0–16384]<input type="number" step="1" min="0" max="16384" id="md' + i + '"></label>' +
+    '<label class="settings-field">' + c + ': label<input type="text" maxlength="11" id="lb' + i + '"></label>').join('');
+})();
+
+async function loadSettings() {
+  const j = await apiGet('api/config');
+  $('ramp_s').value = j.ramp_s; $('ramp_s').min = j.ramp_min; $('ramp_s').max = j.ramp_max;
+  $('fan_on_pct').value = j.fan_on_pct;
+  $('fan_off_pct').value = j.fan_off_pct;
+  j.channels.forEach((c, i) => {
+    $('pf' + i).value = (c.power_frac / 100).toFixed(2);
+    $('ga' + i).value = c.gamma.toFixed(2);
+    $('md' + i).value = c.min_duty;
+    $('lb' + i).value = c.label;
+  });
+}
+function toggleSettings() {
+  const p = $('settingsPanel');
+  const show = p.style.display === 'none';
+  if (show) loadSettings().catch(e => showAlert('Error', e.message, 'err'));
+  p.style.display = show ? '' : 'none';
+}
+$('settingsBtn').onclick = toggleSettings;
+$('btnCancelSettings').onclick = toggleSettings;
+$('btnSaveSettings').onclick = async () => {
+  const body = { ramp_s: $('ramp_s').value, fan_on_pct: $('fan_on_pct').value, fan_off_pct: $('fan_off_pct').value };
+  ['a', 'b', 'c', 'd'].forEach((k, i) => {
+    body['pf_' + k] = Math.round(parseFloat($('pf' + i).value) * 100);
+    body['gamma_' + k] = $('ga' + i).value;
+    body['min_duty_' + k] = $('md' + i).value;
+    body['label_' + k] = $('lb' + i).value;
+  });
+  try {
+    await apiPost('api/config', body);
+    showAlert('Saved', 'Settings stored in FRAM.', 'ok');
+    toggleSettings();
+  } catch (e) { showAlert('Error', e.message, 'err'); }
+};
+
+$('btnLogout').addEventListener('click', async () => {
   await fetch('api/logout', { method: 'POST' });
   window.location.href = 'login';
 });
 
-document.getElementById('btnSaveThermo').addEventListener('click', async () => {
-  const body = {};
-  for (const k of ['target_temp','heat_hyst','cool_start','cool_full','thermal_buffer','fan_min_pct',
-                    'alarm_delta_low','alarm_delta_high','trend_alarm_delta','trend_window_min',
-                    'temp_offset','heater_watt','pulses_per_kwh']) {
-    body[k] = document.getElementById(k).value;
-  }
-  const r = await fetch('api/thermo-config', { method: 'POST', body: new URLSearchParams(body) });
-  const j = await r.json();
-  if (j.ok) {
-    showAlert('Saved', 'Algorithm settings have been saved.', 'ok');
-  } else {
-    showAlert('Error', j.error || 'Save failed', 'err');
-  }
-});
-
-document.getElementById('btnLoadCharts').addEventListener('click', loadCharts);
-
-updateLockUI();
-refresh();
-loadThermoConfig();
-loadCharts();
-setInterval(refresh, 5000);
+refresh().then(loadPrograms).catch(() => {});
+// Odpytywanie: co 0,5 s w trakcie rampy i w trybie ręcznym (wartości się zmieniają), inaczej co 2 s
+const POLL_FAST_MS = 500, POLL_SLOW_MS = 2000;
+async function pollLoop() {
+  await refresh();
+  const fast = lastStatus && (lastStatus.ramp || lastStatus.mode !== 'program');
+  const ms = fast ? POLL_FAST_MS : POLL_SLOW_MS;
+  $('chBars').style.setProperty('--poll', ms + 'ms');
+  setTimeout(pollLoop, ms);
+}
+setTimeout(pollLoop, POLL_SLOW_MS);
 </script>
 </div>
 </body>
 </html>
+
 )rawliteral";
 
 const char* getDashboardHtml() {
@@ -933,7 +975,7 @@ static const char LOGIN_HTML[] PROGMEM = R"rawliteral(
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Thermo Control — Login</title>
+<title>RL90 Lamp — Login</title>
 <style>
   :root {
     --bg-primary:#0a0f1a; --bg-card:#111827; --border:#2d3a4f;
@@ -941,7 +983,7 @@ static const char LOGIN_HTML[] PROGMEM = R"rawliteral(
     --radius:12px;
   }
   body { font-family: sans-serif; background:var(--bg-primary); color:var(--text-primary); margin:0; padding:16px;
-         display:flex; align-items:center; justify-content:center; min-height:100vh; }
+         display:flex; align-items:center; justify-content:center; min-height:100vh; box-sizing:border-box; }
   .card { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); padding:24px; width:280px; }
   h1 { color:var(--accent-blue); font-size:1.3em; margin-top:0; }
   input { width:100%; padding:8px; margin:8px 0; border-radius:8px; border:1px solid var(--border); background:#1e293b; color:var(--text-primary); box-sizing:border-box; }
@@ -951,7 +993,7 @@ static const char LOGIN_HTML[] PROGMEM = R"rawliteral(
 </head>
 <body>
 <div class="card">
-  <h1>Thermo Control</h1>
+  <h1>RL90 Lamp</h1>
   <form id="f">
     <input type="password" id="password" placeholder="Hasło" autofocus>
     <button type="submit">Zaloguj</button>

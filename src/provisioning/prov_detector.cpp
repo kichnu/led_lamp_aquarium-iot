@@ -31,3 +31,25 @@ bool checkProvisioningButton() {
     LOG_INFO("Provisioning button held for %dms - entering provisioning mode", PROV_BUTTON_HOLD_MS);
     return true;
 }
+
+void updateProvisioningButtonLog() {
+    static bool pressed = false;
+    static unsigned long changeAt = 0;
+    static unsigned long pressStart = 0;
+
+    bool raw = digitalRead(PROV_BUTTON_PIN) == LOW;
+    unsigned long now = millis();
+    if (raw == pressed) {
+        changeAt = now;
+        return;
+    }
+    if (now - changeAt < PROV_BUTTON_DEBOUNCE_MS) return;   // stan musi się utrzymać
+
+    pressed = raw;
+    if (pressed) {
+        pressStart = now;
+        LOG_INFO("Przycisk GPIO%d: NACISNIETY", PROV_BUTTON_PIN);
+    } else {
+        LOG_INFO("Przycisk GPIO%d: zwolniony po %lu ms", PROV_BUTTON_PIN, now - pressStart);
+    }
+}

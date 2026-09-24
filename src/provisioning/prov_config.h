@@ -8,12 +8,12 @@
 // ===============================
 
 // Button Configuration
-#define PROV_BUTTON_PIN         RESET_PIN  // GPIO37 (RESET_PIN w hardware_pins.h)
+#define PROV_BUTTON_PIN         RESET_PIN  // GPIO10 (RESET_PIN w hardware_pins.h)
 #define PROV_BUTTON_HOLD_MS     5000       // Hold time to enter provisioning (5 seconds)
 #define PROV_BUTTON_DEBOUNCE_MS 100        // Debounce time
 
 // Access Point Configuration
-#define PROV_AP_SSID            "ESP32-WATER-SETUP"
+#define PROV_AP_SSID            "RL90-LAMP-SETUP"
 #define PROV_AP_PASSWORD        "setup12345"
 #define PROV_AP_CHANNEL         6
 #define PROV_AP_MAX_CLIENTS     4

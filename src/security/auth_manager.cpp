@@ -60,7 +60,7 @@ bool verifyPassword(const String& password) {
         LOG_ERROR("🔒 Authentication BLOCKED - No FRAM credentials loaded!");
         LOG_ERROR("🔧 Use Captive Portal to configure credentials first:");
         LOG_ERROR("   1. Hold button for 5 seconds during boot");
-        LOG_ERROR("   2. Connect to ESP32-WATER-SETUP WiFi");
+        LOG_ERROR("   2. Connect to RL90-LAMP-SETUP WiFi");
         LOG_ERROR("   3. Configure credentials in browser");
         LOG_ERROR("====================================");
         return false;  // Force FRAM setup!

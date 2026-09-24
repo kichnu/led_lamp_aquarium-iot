@@ -1,6 +1,6 @@
 # RL90 — ustalone i do ustalenia przed kodowaniem
 
-Stan na 2026-09-24. Zbiorczy przegląd; szczegóły i uzasadnienia w `RL90_HANDOFF.md` (sekcje w nawiasach)
+Stan na 2026-09-24. Etap 1 zaimplementowany w `src/` (build OK), nietestowany na sprzęcie. Zbiorczy przegląd; szczegóły i uzasadnienia w `RL90_HANDOFF.md` (sekcje w nawiasach)
 i `CURVE_EDITOR_IMPLEMENTATION.md`.
 
 ---
@@ -120,3 +120,18 @@ Brak — wszystkie punkty blokujące szkielet są ustalone.
   programy niezmienne „do potwierdzenia” — już potwierdzone; §14: wskazuje
   `curve_editor.html` (Akima) zamiast wariantu linear.
 - `docs/c6_bringup/`: stary test na C6 (historia z §5), zachowany tylko jako archiwum.
+
+## Etap 1 — implementacja (2026-09-24)
+
+- Moduły: `src/lamp/` (typy FRAM, obszar systemowy, biblioteka programów, silnik światła), `hardware/pwm_output`,
+  własny sterownik FRAM I2C, `rtc_controller` z SNTP w tle (bez blokowania loop()), `core/lamp_lock`.
+- API według `web/web_handlers.h`; GUI: status, lista programów (alfabetycznie), edytor (port prototypu),
+  tryb test/nocny (4 pionowe suwaki), ustawienia ukryte pod „⚙ Settings”.
+- Decyzje implementacyjne podjęte bez pytania (do weryfikacji):
+  - aktywnego programu nie można skasować (przycisk ✕ wyłączony);
+  - start z zasilania / po crashu: LEDC na 0 jako pierwsza instrukcja `setup()`, potem rampa od 0;
+    bez czasu (brak DS3231 i NTP) kanały = 0, rampa w momencie pojawienia się czasu;
+  - restart po OTA też przez `gpio_hold` (bez błysku), po nim wartość programu bez rampy;
+  - WiFi łączy się w tle (termostat blokował `setup()` do 25 s — lampa byłaby ciemna);
+  - blokada PIN usunięta z provisioningu (decyzja „czy potrzebna” wciąż otwarta);
+  - GUI po angielsku jak w termostacie; preset nocny domyślnie 0,5 % na kanał.

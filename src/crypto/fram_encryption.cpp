@@ -15,19 +15,11 @@ bool generateEncryptionKey(const String& device_name, uint8_t* key) {
 }
 
 bool generateRandomIV(uint8_t* iv) {
-    // Generate random IV using built-in random functions
-    randomSeed(millis() ^ analogRead(A0));
-    
-    for (int i = 0; i < 8; i++) {  // Note: using 8-byte IV
-        iv[i] = random(0, 256);
-    }
-    
-    // Add more entropy
-    for (int i = 0; i < 8; i++) {
-        iv[i] ^= (micros() & 0xFF);
-        delay(1);
-    }
-    
+    // esp_random() — sprzętowy RNG (entropia z RF przy włączonym WiFi, w provisioningu AP działa).
+    // Wcześniej analogRead(A0): na XIAO C3 A0 = GPIO2 (strapping, rezerwa DS18B20).
+    uint32_t r1 = esp_random(), r2 = esp_random();
+    memcpy(iv, &r1, 4);
+    memcpy(iv + 4, &r2, 4);
     return true;
 }
 
