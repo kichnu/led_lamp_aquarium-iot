@@ -72,13 +72,10 @@ Nie ma tu trybu testowego ani nocnego: oba są efemeryczne, po restarcie lampa w
 ```c
 struct LampConfig {             // packed
     uint32_t magic;
-    uint16_t pwm_freq_hz;         // domyślnie 1000 do czasu pomiaru #6
-    uint16_t ramp_s;              // wspólna rampa (wartość domyślna do ustalenia)
-    uint16_t fan_freq_hz;         // #7
-    uint8_t  fan_min_pct;
-    uint16_t fan_on_threshold;    // w ‱ mocy (0–10000)
-    uint16_t fan_hyst;            // w ‱
-    uint16_t fan_kick_ms;
+    uint16_t ramp_s;              // wspólna rampa, domyślnie 10, zakres 3–30
+    uint8_t  fan_min_pct;         // próg startu (P ≥), domyślnie 20; PWM fana = P
+    uint8_t  fan_off_pct;         // próg stopu (P <), domyślnie 18 — histereza
+                                  // (częstotliwości PWM LED/FAN = #define 500 Hz, nie w FRAM)
     uint16_t night_preset[4];     // setne % (0,1 % = 10), start suwaków trybu nocnego
     uint8_t  _reserved[...];      // do 124 B
     uint32_t crc32;
@@ -89,9 +86,10 @@ struct LampConfig {             // packed
 ```c
 struct ChannelConfig {          // packed, 32 B
     uint32_t magic;
-    float    gamma;               // 1.0 do czasu pomiaru
+    float    gamma;               // 1.0 (v = % mocy; γ tylko korekta nieliniowości drivera)
     uint16_t min_duty;            // 0–16384
-    uint16_t power_frac;          // ‱ udziału w mocy lampy
+    uint16_t power_frac;          // ‱ mocy lampy przy kanale solo, domyślnie A 1500, B 1000, C 6000, D 1500
+                                  // (nieaddytywne — wspólne diody; edycja w GUI „settings”)
     char     label[12];           // np. "Blue", "White" po ustaleniu mapowania (#3)
     uint8_t  _reserved[4];
     uint32_t crc32;

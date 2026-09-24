@@ -93,6 +93,18 @@
   }
   .shift-row { display: inline-flex; align-items: center; gap: 5px; }
   .shift-row .msym { font-size: 20px; }
+
+  /* Eksport programu (prototyp: do przekazania programu fabrycznego / testów portu C++) */
+  #tools { display: flex; gap: 8px; flex: none; }
+  #tools button {
+    background: #1a1a1a; border: 1px solid #444; color: #ccc;
+    font-family: monospace; font-size: 13px; padding: 6px 10px; cursor: pointer;
+  }
+  #export {
+    display: none; width: 100%; height: 140px; flex: none;
+    background: #1a1a1a; color: #999; border: 1px solid #333;
+    font-family: monospace; font-size: 11px; padding: 6px;
+  }
 </style>
 </head>
 <body>
@@ -118,13 +130,19 @@
     <button class="btn-ch" id="btn-ch-C">C</button>
   </div>
 
+  <div id="tools">
+    <button id="btn-json">eksport JSON</button>
+    <button id="btn-copy">kopiuj</button>
+  </div>
+  <textarea id="export" readonly></textarea>
+
   <div id="bottom-spacer"></div>
 
 </div>
 
 <script>
 // ─── STAŁE ────────────────────────────────────────────────────────────────────
-// Wszystkie wartości v w jednostkach % "postrzeganych" (0–100), zaokrąglone do 0,01
+// Wszystkie wartości v w % mocy kanału (liniowo z duty, 0–100), zaokrąglone do 0,01
 // (w firmware: uint16 w setnych procenta, 0–10000). Gamma i min. wypełnienie
 // stosuje firmware, nie GUI.
 const DAY_MIN       = 1440;
@@ -429,6 +447,24 @@ function updateChannelUI() {
   const off = cur < 0 ? '0.25' : '1';
   ['btn-up', 'btn-down', 'btn-shift-left', 'btn-shift-right'].forEach(id => document.getElementById(id).style.opacity = off);
 }
+
+// ─── EKSPORT ──────────────────────────────────────────────────────────────────
+// Format jak GET /api/program: t w minutach, v w setnych procenta (uint16) — tak jak w FRAM.
+const exportEl = document.getElementById('export');
+document.getElementById('btn-json').addEventListener('click', () => {
+  const prog = {};
+  CHANNELS.forEach(c => { prog[c.name] = c.points.map(p => [p.t, Math.round(p.v * 100)]); });
+  const bytes = CHANNELS.reduce((a, c) => a + 4 * c.points.length, 0);
+  exportEl.style.display = 'block';
+  exportEl.value = JSON.stringify(prog) + '\n// punkty: ' + CHANNELS.map(c => c.name + '=' + c.points.length).join(' ')
+                 + ', payload: ' + bytes + ' B';
+});
+document.getElementById('btn-copy').addEventListener('click', () => {
+  if (exportEl.style.display !== 'block') document.getElementById('btn-json').click();
+  exportEl.select();
+  if (navigator.clipboard) navigator.clipboard.writeText(exportEl.value).catch(() => document.execCommand('copy'));
+  else document.execCommand('copy');
+});
 
 // ─── HELPERS / INIT ───────────────────────────────────────────────────────────
 function toHHMM(m) {

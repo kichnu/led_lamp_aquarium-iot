@@ -55,9 +55,12 @@ The root project (`pio run` in repo root) still builds the thermostat for ESP32-
 - LEDC 14 bit, 100 % = 2^14. Floating Hi7001 PWM input = 100 % (internal pull-up) → ~1 s full-brightness flash at
   boot is accepted (same as the original controller); no pull-downs.
 - Daily restart kept (~00:00–01:00, channels at 0), with `gpio_hold_en` LOW on A–D to avoid a night flash —
-  conditional on the `pwm_test/` hardware test.
+  verified on final hardware/firmware via OTA (no more `pwm_test/` testing).
 - Watchdog: `enableLoopWDT()`, `esp_task_wdt_reset()` in `ArduinoOTA.onProgress()`, 5 s timeout.
 - Programs: polyline curves, max 48 points/channel, immutable (save = new id, delete = tombstone), 24 FRAM slots.
-- Fan: feedforward from Σ power_frac × actual duty (after gamma/min_duty), threshold + hysteresis, no sensor.
+- Program values v = % of channel power (linear with duty, γ = 1). Factory program id `0x524C393046414354`.
+- Fan: 500 Hz, feedforward P = Σ power_frac × actual duty, every ~30 s fan PWM = P (45 % → 45 %),
+  hysteresis ON ≥ 20 % / OFF < 18 % (fan_min_pct / fan_off_pct), no sensor. power_frac non-additive (shared LEDs), editable in hidden GUI settings.
+- LED PWM 500 Hz (`#define`), common ramp default 10 s (3–30 s), program list sorted alphabetically.
 - Time: RTC in UTC, curves in local time (`POLAND_TZ`), program follows the clock across DST.
 - POST handlers use `application/x-www-form-urlencoded` (ESPAsyncWebServer `hasParam(name, true)`), never JSON.

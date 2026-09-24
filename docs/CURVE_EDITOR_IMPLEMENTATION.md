@@ -116,7 +116,9 @@ ten sam zestaw punktów. Firmware nie modyfikuje punktów.
 6. **Wentylator (feedforward, bez czujnika temperatury):**
    ```
    P = Σ (power_frac[ch] · duty[ch] / 16384)     // ch = A..D, duty z kroku 3 wyżej (po gammie i min_duty!)
-   fan_duty = P < FAN_ON_THRESHOLD ? 0 : map(P, FAN_ON_THRESHOLD..1.0 → fan_min_pct..100%)
+   fan_on   = fan_on ? (P >= fan_off_pct) : (P >= fan_min_pct)   // co ~30 s, ON ≥ 20 %, OFF < 18 %
+   fan_duty = fan_on ? min(P, 100%) : 0
+   // (zaktualizowane 2026-09-24, reszta punktu nieaktualna — patrz USTALENIA.md)
    ```
    `power_frac[ch]` — udział kanału w całkowitej mocy/prądzie lampy (parametr FRAM jak `gamma`/`min_duty`,
    wyznaczony pomiarem, kwestie #2–#9 handoffu; Σ power_frac ≈ 1 przy pełnym obciążeniu wszystkich kanałów).
@@ -143,7 +145,7 @@ POST /api/manual-set                ch_a..ch_d (wartości suwaków, live)
 POST /api/manual-exit               powrót do aktywnego programu, z rampą
 GET|POST /api/night-preset          odczyt/zapis presetu trybu nocnego (4×0,1%) — szkic, forma do domknięcia (§8)
 ```
-Walidacja po stronie serwera (nie ufać GUI): t rosnące, t[0] = 0, t[n−1] = 1440, różnice ≥ 2 min, v ≤ 10000,
+Walidacja po stronie serwera (nie ufać GUI): t rosnące, t[0] = 0, t[n−1] = 1440, różnice ≥ 1 min (= `MERGE_MIN`), v ≤ 10000,
 count ≤ 48 na kanał, długość nazwy.
 
 GUI serwowane z PROGMEM (`html_pages.*` w stylu termostatu), edytor jako jeden plik, gzip.
