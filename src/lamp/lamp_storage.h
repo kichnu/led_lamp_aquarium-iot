@@ -26,6 +26,7 @@ void defaultLampConfig(LampConfig& c);
 void defaultChannelConfig(uint8_t ch, ChannelConfig& c);
 
 bool isTombstoned(uint64_t id);
-bool addTombstone(uint64_t id);
+bool addTombstone(uint64_t id);     // program fabryczny nigdy nie trafia na listę
+bool removeTombstone(uint64_t id);  // naprawa: fabryczny skasowany przez starszy firmware
 
 #endif

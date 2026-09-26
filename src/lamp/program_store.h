@@ -23,6 +23,7 @@ enum ProgramError : uint8_t {
     PROG_ERR_FULL,          // brak wolnego slotu
     PROG_ERR_NOT_FOUND,
     PROG_ERR_ACTIVE,        // nie można skasować aktywnego programu
+    PROG_ERR_FACTORY,       // nie można skasować programu fabrycznego
     PROG_ERR_STORAGE,       // błąd FRAM
 };
 
@@ -36,9 +37,13 @@ const Program& activeProgram();
 ProgramError   activateProgram(uint64_t id);     // wczytuje z FRAM, zapisuje SYSTEM_STATE
 bool           loadProgram(uint64_t id, Program& out);
 
-// Zapisuje p jako NOWY program (nadaje id i created_ts). Zwraca id w newId.
+// Zapisuje p jako NOWY program (nadaje id, created_ts i seq z licznika programs_created).
+// Pusta p.name → nazwa „Program NNNN” (seq 1..9999 cyklicznie). Zwraca id w newId.
 ProgramError saveNewProgram(Program& p, uint64_t& newId);
 ProgramError deleteProgram(uint64_t id);
+// Zmiana nazwy przy niezmiennych programach: kopia pod nowym id (parent_id = stary), przełączenie
+// aktywnego, potem kasowanie starego (tombstone). Zanik zasilania w trakcie zostawia najwyżej oba.
+ProgramError renameProgram(uint64_t id, const char* name, uint64_t& newId);
 
 // t[0]=0, t[n−1]=1440, t ściśle rosnące (≥ 1 min = MERGE_MIN), v ≤ 10000, 2 ≤ n ≤ 48
 bool validateCurve(const ChannelCurve& c);

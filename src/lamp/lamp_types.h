@@ -50,7 +50,8 @@ struct SystemState {            // 64 B
     uint16_t cnt_brownout;
     uint16_t cnt_other;
     uint8_t  last_reset_reason;
-    uint8_t  _reserved[35];
+    uint32_t programs_created;    // licznik zapisów z edytora, tylko rośnie (nazwa „Program NNNN”)
+    uint8_t  _reserved[31];
     uint32_t crc32;
 };
 
@@ -92,7 +93,7 @@ struct ProgramHeader {          // 64 B, początek slotu
     uint32_t created_ts;          // UTC
     uint32_t payload_crc32;
     char     name[PROGRAM_NAME_LEN];
-    uint8_t  _reserved[4];
+    uint32_t seq;                 // numer z programs_created (0 = fabryczny / sprzed licznika)
     uint32_t header_crc32;        // CRC pól po magic, bez header_crc32
 };
 
@@ -117,6 +118,7 @@ struct Program {
     uint64_t     parent_id;
     uint32_t     created_ts;
     uint8_t      flags;
+    uint32_t     seq;
     char         name[PROGRAM_NAME_LEN];
     ChannelCurve ch[NUM_CHANNELS];
 };

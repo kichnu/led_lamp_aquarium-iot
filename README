@@ -1,15 +1,131 @@
-# RL90 — własny sterownik lampy akwariowej PopBloom RL90
+# RL90 — custom controller for the PopBloom RL90 aquarium lamp
 
-Zamiana modułu Wi-Fi Tuya CBU w lampie PopBloom RL90 na Seeed XIAO ESP32-C3 z własnym firmware:
-4 kanały PWM LED + wentylator, RTC DS3231, FRAM I2C 32 KB, dobowe programy światła wykonywane lokalnie,
-GUI z edytorem krzywych, docelowo synchronizacja kilku lamp przez ESP-NOW.
+The original Tuya CBU (BK7231N) Wi-Fi module in the PopBloom RL90 is replaced by a Seeed XIAO ESP32-C3
+running custom firmware: 4 PWM LED channels + fan, DS3231 RTC, 32 KB I2C FRAM, daily light programs executed
+locally, web GUI with a curve editor, later ESP-NOW sync between several lamps.
 
-Stan: etap 1 zaimplementowany (backend, GUI z edytorem, OTA), nietestowany na sprzęcie.
-Build: `pio run`; OTA: `pio run -e seeed_xiao_esp32c3_ota -t upload` (hasło w `OTA_PASSWORD_192_168_10_5`).
-- `docs/USTALENIA.md` — co ustalone, co otwarte
-- `docs/RL90_HANDOFF.md` — sprzęt, pomiary, architektura
-- `docs/FRAM_MAP.md` — mapa pamięci FRAM
-- `docs/curve_editor_linear.html` — prototyp edytora (otworzyć w przeglądarce)
-- `pwm_test/` — archiwalny firmware testowy PWM / gpio_hold
+Status: stage 1 implemented (backend, GUI with editor, OTA), not yet tested on hardware.
+
+## Build, upload and monitor
+
+Requires [PlatformIO](https://platformio.org/). Two environments in `platformio.ini`:
+
+| Environment              | Upload                    | Notes                                   |
+|--------------------------|---------------------------|-----------------------------------------|
+| `seeed_xiao_esp32c3`     | USB (default, no `-e`)    | first flash, partition table changes    |
+| `seeed_xiao_esp32c3_ota` | Wi-Fi, espota → 192.168.10.5 | same firmware, only the upload differs |
+
+### OTA password (set once, before the first build)
+
+The OTA password is baked into the firmware at build time and sent by espota on upload (`--auth`). Both come from
+the shell variable `OTA_PASSWORD_192_168_10_5` — named after the device's IP (dots → underscores), not the project,
+because several IoT devices share one secrets file. The name is set in `platformio.ini`
+(`custom_ota_password_var`); `scripts/ota_secret.py` (pre-script) reads it, writes
+`.pio/build/<env>/generated/ota_secret.h` and adds `--auth` for espota.
+
+The password is deliberately not in `platformio.ini` via `${sysenv...}`: its value would become part of
+PlatformIO's project checksum, and any difference between runs (e.g. a shell without the secrets file) would wipe
+the whole `.pio/build` and recompile both environments from scratch. Now a changed (or missing) password
+recompiles only `main.cpp`.
+
+- `-t upload` with the variable unset stops before flashing (`... nie ustawione — upload przerwany`) — otherwise the
+  lamp would get an empty password and every later OTA would fail with `Authentication Failed`. This applies to USB
+  uploads too.
+- A plain build without the variable only warns and bakes in an empty password (fine for compile checks).
+
+Keep it permanently outside the repo:
+
+```bash
+mkdir -p ~/.secrets && chmod 700 ~/.secrets
+echo "export OTA_PASSWORD_192_168_10_5='your-password'" >> ~/.secrets/iot.env   # single quotes: # $ spaces are safe
+chmod 600 ~/.secrets/iot.env
+
+# ~/.zshrc
+[ -f ~/.secrets/iot.env ] && source ~/.secrets/iot.env
+```
+
+Check in the shell that runs `pio` (an export in another terminal/process does not reach it):
+
+```bash
+[ -n "$OTA_PASSWORD_192_168_10_5" ] && echo set || echo MISSING
+```
+
+### USB (serial)
+
+```bash
+pio run                                   # build only
+pio run -t upload                         # build + flash over USB (XIAO native USB-CDC, usually /dev/ttyACM0)
+pio run -t upload --upload-port /dev/ttyACM0
+pio device monitor                        # 115200 baud, Ctrl+C to exit
+pio run -t upload -t monitor              # flash and open the monitor in one go
+```
+
+The first flash of firmware containing OTA must go over USB — OTA does not exist on the device until
+`ArduinoOTA.begin()` is running. A partition table change (`board_build.partitions`) also requires USB.
+If the port does not show up (e.g. firmware stuck in a boot loop), hold BOOT while plugging in the cable.
+
+### Wi-Fi (OTA upload)
+
+```bash
+pio run -e seeed_xiao_esp32c3_ota -t upload
+
+# without ~/.secrets/iot.env — the variable must be in the SAME command as pio
+OTA_PASSWORD_192_168_10_5='your-password' pio run -e seeed_xiao_esp32c3_ota -t upload
+
+# different IP than in platformio.ini
+pio run -e seeed_xiao_esp32c3_ota -t upload --upload-port 192.168.10.x
+```
+
+The device listens on UDP 3232; after authentication it opens a TCP connection back to the computer on a fixed
+port 8266 (`--host_port`). The lamp sits in the isolated IoT VLAN (192.168.10.0/24), the computer in the
+LAN (192.168.2.10), and the router blocks IoT → LAN. Without an exception espota prints
+`Authenticating...OK` followed by `No response from device`.
+
+One-time MikroTik rule, disabled by default, placed before the rule that blocks IoT → LAN:
+
+```
+/ip firewall filter add chain=forward action=accept protocol=tcp \
+    src-address=192.168.10.5 dst-address=192.168.2.10 dst-port=8266 \
+    comment="OTA-lamp-temp" disabled=yes place-before=<number of the IoT→LAN drop rule>
+```
+
+Every OTA upload:
+
+```
+/ip firewall filter enable [find comment="OTA-lamp-temp"]      # MikroTik
+pio run -e seeed_xiao_esp32c3_ota -t upload                    # computer
+/ip firewall filter disable [find comment="OTA-lamp-temp"]     # MikroTik
+```
+
+`Authentication Failed` instead means the password baked into the running firmware differs from
+`OTA_PASSWORD_192_168_10_5` — reflash once over USB with the variable set.
+
+After a successful upload the lamp restarts itself with channels A–D held LOW (no full-brightness flash).
+
+### Wi-Fi (log-socket monitor)
+
+```bash
+pio device monitor --port socket://192.168.10.5:8880
+```
+
+Mirrors everything that goes through `LOG_INFO` / `LOG_WARNING` / `LOG_ERROR` (`src/core/logging.cpp`). No
+authentication, LAN only, one client at a time — a second connection is dropped. It does not show crash /
+panic output (that goes raw to the UART); to diagnose a crash, including one during OTA, keep a USB monitor
+open.
+
+### Wi-Fi credentials (provisioning)
+
+Wi-Fi SSID/password and the GUI admin password are stored encrypted in FRAM and entered through the captive
+portal, not at build time. Hold the button on GPIO10 for 5 s during boot → access point `RL90-LAMP-SETUP`,
+password `setup12345` → the setup page opens automatically (or http://192.168.4.1).
+
+## Documentation
+
+- `docs/USTALENIA.md` — decisions made / still open (Polish)
+- `docs/RL90_HANDOFF.md` — hardware, measurements, architecture
+- `docs/FRAM_MAP.md` — FRAM memory map
+- `docs/curve_editor_linear.html` — curve editor prototype (open in a browser)
+- `docs/OTA_WIFI_UPLOAD_PATTERN.md` — OTA pattern and known pitfalls
+- `pwm_test/` — archived PWM / gpio_hold test firmware
 
 Licencja: MIT (`LICENSE`).

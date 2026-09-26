@@ -50,7 +50,9 @@ i `CURVE_EDITOR_IMPLEMENTATION.md`.
 - Wersja layoutu dotyczy tylko obszaru systemowego — zmiana configu nigdy nie kasuje programów ani poświadczeń.
 - Brak osobnego katalogu: katalogiem są nagłówki slotów. Tombstone: ring 126 id.
 - Nagłówek programu 64 B z `created_ts` i `parent_id`; `magic` zapisywany ostatni, kasowanie = `magic = 0`.
-- Program fabryczny instalowany tylko przy inicjalizacji pustej FRAM.
+- Programu fabrycznego nie da się skasować (2026-09-26): GUI bez ✕, backend zwraca 409, jego id nigdy nie trafia
+  do TOMBSTONES. Przy starcie, jeśli brak go w bibliotece (pusta FRAM albo skasowany przez starszy firmware),
+  jest instalowany ponownie; jako aktywny ustawiany tylko przy pustej FRAM.
 
 ### Watchdog (2026-09-23)
 - Domyślne zostają: Interrupt WDT 300 ms, Task WDT 5 s z resetem (sdkconfig C3 frameworku).
@@ -70,7 +72,14 @@ i `CURVE_EDITOR_IMPLEMENTATION.md`.
   (tylko GUI — dane obejmują całą dobę 0–1440).
 - Format w FRAM: punkt = `uint16 t` + `uint16 v` (setne %), slot 1 KB, nagłówek zapisywany jako ostatni.
 - Programy niezmienne: „zapisz” zawsze tworzy nowy program (nowe id 64 bit), „skasuj” zostawia tombstone.
-  Tylko te dwa klawisze. Limit 24 programów, first-fit slot, numer slotu niewidoczny w GUI.
+  Zmiana nazwy (✎ na liście, 2026-09-26) = kopia pod nowym id (`parent_id` = stare), przełączenie aktywnego
+  bez rampy, skasowanie starego (tombstone) — dane dalej niezmienne, ESP-NOW bez dodatkowych reguł; wymaga
+  wolnego slotu, fabrycznego nie dotyczy.
+  Edytor bez pola nazwy (2026-09-26): nowy program dostaje „Program NNNN” z licznika `programs_created`
+  (SYSTEM_STATE, uint32, tylko rośnie; nazwa = (n−1) mod 9999 + 1, 4 cyfry). Numer także w nagłówku programu
+  (`seq`), przy starcie licznik ≥ max `seq` ze slotów (odporność na reinicjalizację obszaru systemowego). GUI
+  pokazuje „N created”. ESP-NOW: przy synchronizacji lampa bierze max(własny, cudzy) licznik.
+  Limit 24 programów, first-fit slot, numer slotu niewidoczny w GUI.
   Program fabryczny ze stałym id `0x524C393046414354` (ASCII „RL90FACT”) zaszytym w firmware. Punkty (t w min,
   v w setnych %; zaokrąglone do pełnych godzin i dziesiątek %):
   ```
@@ -79,6 +88,11 @@ i `CURVE_EDITOR_IMPLEMENTATION.md`.
   C: [0,0] [600,0] [660,10000] [1260,10000] [1320,0] [1440,0]   100 %
   D: [0,0] [600,0] [660,9000]  [1260,9000]  [1320,0] [1440,0]   90 %
   ```
+- Karta Programs (2026-09-26): jedna karta, wykres + karetka zawsze na górze. Pod nimi strefa o stałej wysokości
+  (= klawiatura z przyciskami): lista programów (podgląd) albo klawiatura + 0.1% / 08–24 / Save / Close (edycja),
+  przełączane Edit ↔ Save/Close. Podgląd: klik w wiersz podmienia wykres (wszystkie kanały, tylko karetka), start
+  = program aktywny; oglądany = niebieski obrys, aktywny = zielony. Close z niezapisanymi zmianami pyta
+  „Discard changes?”. Lista dłuższa niż strefa przewija się.
 - Lista programów w GUI alfabetycznie (bez rozróżniania wielkości liter, `localeCompare(…, 'pl')`).
 - v w programie = % mocy kanału (liniowo z duty), nie % „postrzegany”. Wykres ma obrazować moc traconą w kanałach
   (≈ PAR przy równej sprawności LED). γ nie służy już percepcji — zostaje (domyślnie 1) tylko jako ewentualna korekta
@@ -89,9 +103,13 @@ i `CURVE_EDITOR_IMPLEMENTATION.md`.
 - Wentylator feedforward, bez czujnika: `P = Σ power_frac · duty` (duty po gammie/`min_duty`), przeliczane co ~30 s
   i wprost na PWM = min(P, 100 %) (Σ może przekroczyć 1). Histereza: wyłączony → start przy P ≥ 20 %,
   włączony → stop przy P < 18 %. Bez kick-startu.
-- Tryb testowy: 4 suwaki startujące od 50 %, bez timeoutu. Tryb nocny: ten sam mechanizm, preset z FRAM,
-  krok 0,1 %, tylko ręcznie. Jedna wspólna rampa dla przełączeń trybów i programów: domyślnie 10 s, zakres
+- Tryb testowy: start od 50 %, bez timeoutu. Tryb nocny: preset z FRAM, tylko ręcznie. Jedna wspólna rampa dla przełączeń trybów i programów: domyślnie 10 s, zakres
   3–30 s w GUI (`ramp_s` w FRAM).
+- GUI trybów (2026-09-26): przełącznik Auto Mode / Service Mode (wzorzec z dolewki) w karcie statusu; Service Mode
+  to stan samego GUI — odblokowuje Night Light / Test Light, lampa dalej jedzie programem do wyboru jednego z nich;
+  powrót do Auto = `manual-exit`. Test Light: słupki kanałów w karcie statusu stają się suwakami (kreska = wartość
+  zadana, krok 1 %, wypełnienie = faktyczne wyjście). Night Light tylko włącza preset; preset edytowany w Settings
+  (pola A–D w %, zapis przy włączonym Night Light od razu zmienia wyjście). Osobna karta Manual Control usunięta.
 - API: POST jako form-urlencoded (szkic w `CURVE_EDITOR_IMPLEMENTATION.md` §6).
 
 ---
@@ -126,7 +144,7 @@ Brak — wszystkie punkty blokujące szkielet są ustalone.
 - Moduły: `src/lamp/` (typy FRAM, obszar systemowy, biblioteka programów, silnik światła), `hardware/pwm_output`,
   własny sterownik FRAM I2C, `rtc_controller` z SNTP w tle (bez blokowania loop()), `core/lamp_lock`.
 - API według `web/web_handlers.h`; GUI: status, lista programów (alfabetycznie), edytor (port prototypu),
-  tryb test/nocny (4 pionowe suwaki), ustawienia ukryte pod „⚙ Settings”.
+  tryby Auto/Service z Night/Test Light (patrz „GUI trybów”), ustawienia ukryte pod „⚙ Settings”.
 - Decyzje implementacyjne podjęte bez pytania (do weryfikacji):
   - aktywnego programu nie można skasować (przycisk ✕ wyłączony);
   - start z zasilania / po crashu: LEDC na 0 jako pierwsza instrukcja `setup()`, potem rampa od 0;

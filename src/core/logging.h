@@ -12,8 +12,10 @@ void logError(const char* format, ...);
 // Log-socket — dubluje logi do podłączonego klienta TCP (port 8880), żeby
 // można było `pio device monitor --port socket://<ip>:8880` bez USB.
 // startLogServer() wołaj raz po połączeniu WiFi; updateLogServer() okresowo
-// w loop() (przyjmuje nowe połączenia klienta).
+// w loop() (przyjmuje nowe połączenia klienta). stopLogServer() w OTA onStart(),
+// ponowny startLogServer() w onError() (na sukces restart).
 void startLogServer();
+void stopLogServer();
 void updateLogServer();
 
 // Warunkowe makra logowania - sprawdzają flagę konfiguracyjną

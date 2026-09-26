@@ -13,9 +13,11 @@
 //   GET  /api/status             stan kanałów, wentylatora, czasu, diagnostyka
 //   GET  /api/programs           katalog biblioteki (kolejność dowolna — GUI sortuje)
 //   GET  /api/program?id=<hex>   punkty 4 kanałów {"A":[[t,v100],...],...}
-//   POST /api/program-save       name, parent (hex, opcj.), ch_a..ch_d "t:v,t:v,..." → nowy id
+//   POST /api/program-save       name (opcj. — brak = „Program NNNN” z licznika), parent (hex, opcj.),
+//                                ch_a..ch_d "t:v,t:v,..." → nowy id i nazwa
 //   POST /api/program-activate   id
-//   POST /api/program-delete     id (tombstone; aktywnego nie można)
+//   POST /api/program-delete     id (tombstone; aktywnego i fabrycznego nie można)
+//   POST /api/program-rename     id, name → nowy id (kopia + kasowanie starego; fabrycznego nie można)
 //   POST /api/manual-enter       mode=test|night
 //   POST /api/manual-set         ch_a..ch_d (setne %)
 //   POST /api/manual-exit

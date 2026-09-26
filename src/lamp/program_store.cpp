@@ -116,6 +116,7 @@ static bool readSlot(uint8_t slot, Program& p) {
     p.parent_id = h.parent_id;
     p.created_ts = h.created_ts;
     p.flags = h.flags;
+    p.seq = h.seq;
     memcpy(p.name, h.name, PROGRAM_NAME_LEN);
     p.name[PROGRAM_NAME_LEN - 1] = '\0';
     return true;
@@ -135,6 +136,7 @@ static bool writeSlot(uint8_t slot, const Program& p) {
     h.parent_id = p.parent_id;
     h.created_ts = p.created_ts;
     h.payload_crc32 = crc32Calc(buf, len);
+    h.seq = p.seq;
     memcpy(h.name, p.name, PROGRAM_NAME_LEN);
     h.name[PROGRAM_NAME_LEN - 1] = '\0';
     h.header_crc32 = headerCrc(h);
@@ -170,6 +172,7 @@ static void addToCatalog(uint8_t slot, const ProgramHeader& h) {
 
 static void scanSlots() {
     s_count = 0;
+    uint32_t maxSeq = 0;
     for (uint8_t slot = 0; slot < FRAM_PROGRAM_SLOTS; slot++) {
         ProgramHeader h;
         if (!readHeader(slot, h)) continue;
@@ -180,6 +183,15 @@ static void scanSlots() {
             continue;
         }
         addToCatalog(slot, h);
+        if (h.seq > maxSeq) maxSeq = h.seq;
+    }
+    // Licznik nie może być mniejszy niż numer istniejącego programu (reinicjalizacja obszaru
+    // systemowego zeruje SYSTEM_STATE, sloty zostają) — inaczej nazwy by się powtarzały
+    if (maxSeq > sysState().programs_created) {
+        LOG_WARNING("programs_created %lu < seq w bibliotece %lu — korekta",
+                    (unsigned long)sysState().programs_created, (unsigned long)maxSeq);
+        sysState().programs_created = maxSeq;
+        saveSystemState();
     }
 }
 
@@ -216,7 +228,10 @@ void initProgramStore(bool blankFram) {
 
     scanSlots();
 
-    if (blankFram && !findProgram(FACTORY_PROGRAM_ID)) {
+    // Fabryczny zawsze w bibliotece: pusta FRAM albo skasowany przez starszy firmware
+    // (wtedy też zdjęcie z TOMBSTONES). Aktywny ustawiany tylko przy pustej FRAM.
+    if (!findProgram(FACTORY_PROGRAM_ID)) {
+        removeTombstone(FACTORY_PROGRAM_ID);
         Program f;
         buildFactoryProgram(f);
         f.created_ts = (uint32_t)time(nullptr);
@@ -225,9 +240,13 @@ void initProgramStore(bool blankFram) {
             ProgramHeader h;
             readHeader(slot, h);
             addToCatalog(slot, h);
-            sysState().active_program_id = FACTORY_PROGRAM_ID;
-            saveSystemState();
+            if (blankFram) {
+                sysState().active_program_id = FACTORY_PROGRAM_ID;
+                saveSystemState();
+            }
             LOG_INFO("Program fabryczny zainstalowany (slot %d)", slot);
+        } else {
+            LOG_WARNING("Program fabryczny: brak wolnego slotu / błąd FRAM");
         }
     }
 
@@ -289,9 +308,16 @@ ProgramError saveNewProgram(Program& p, uint64_t& newId) {
     int slot = freeSlot();
     if (slot < 0) return PROG_ERR_FULL;
 
+    // Licznik zapisywany PRZED programem: zanik zasilania najwyżej przeskakuje numer, nigdy go nie dubluje
+    SystemState& st = sysState();
+    st.programs_created++;
+    if (!saveSystemState()) return PROG_ERR_STORAGE;
+
     p.id = newProgramId();
     p.flags = 0;
+    p.seq = st.programs_created;
     p.created_ts = (uint32_t)time(nullptr);
+    if (p.name[0] == '\0') snprintf(p.name, PROGRAM_NAME_LEN, "Program %04lu", (unsigned long)((p.seq - 1) % 9999 + 1));
     p.name[PROGRAM_NAME_LEN - 1] = '\0';
     if (!writeSlot(slot, p)) return PROG_ERR_STORAGE;
 
@@ -303,9 +329,7 @@ ProgramError saveNewProgram(Program& p, uint64_t& newId) {
     return PROG_OK;
 }
 
-ProgramError deleteProgram(uint64_t id) {
-    LampLock lock;
-    if (id == s_active.id) return PROG_ERR_ACTIVE;
+static ProgramError removeFromLibrary(uint64_t id) {
     for (uint8_t i = 0; i < s_count; i++) {
         if (s_catalog[i].id != id) continue;
         uint32_t zero = 0;
@@ -318,6 +342,49 @@ ProgramError deleteProgram(uint64_t id) {
     return PROG_ERR_NOT_FOUND;
 }
 
+ProgramError deleteProgram(uint64_t id) {
+    LampLock lock;
+    if (id == FACTORY_PROGRAM_ID) return PROG_ERR_FACTORY;
+    if (id == s_active.id) return PROG_ERR_ACTIVE;
+    return removeFromLibrary(id);
+}
+
+ProgramError renameProgram(uint64_t id, const char* name, uint64_t& newId) {
+    LampLock lock;
+    if (id == FACTORY_PROGRAM_ID) return PROG_ERR_FACTORY;
+    if (!findProgram(id)) return PROG_ERR_NOT_FOUND;
+    static Program p;   // static: ~830 B poza stosem taska AsyncTCP (pod LampLock)
+    if (!loadProgram(id, p)) return PROG_ERR_STORAGE;
+    if (strncmp(p.name, name, PROGRAM_NAME_LEN) == 0) { newId = id; return PROG_OK; }
+    int slot = freeSlot();
+    if (slot < 0) return PROG_ERR_FULL;
+
+    p.parent_id = id;
+    p.id = newProgramId();
+    p.flags = 0;
+    p.created_ts = (uint32_t)time(nullptr);
+    strncpy(p.name, name, PROGRAM_NAME_LEN - 1);
+    p.name[PROGRAM_NAME_LEN - 1] = '\0';
+    if (!writeSlot(slot, p)) return PROG_ERR_STORAGE;
+    ProgramHeader h;
+    readHeader(slot, h);
+    addToCatalog(slot, h);
+
+    // Aktywny: krzywe identyczne — tylko id/nazwa w RAM, bez rampy
+    if (s_active.id == id) {
+        s_active.id = p.id;
+        s_active.parent_id = p.parent_id;
+        s_active.created_ts = p.created_ts;
+        memcpy(s_active.name, p.name, PROGRAM_NAME_LEN);
+        sysState().active_program_id = p.id;
+        saveSystemState();
+    }
+    removeFromLibrary(id);   // błąd tu = zostają oba, nowy już zapisany
+    newId = p.id;
+    LOG_INFO("Zmieniono nazwę programu: %s (slot %d)", p.name, slot);
+    return PROG_OK;
+}
+
 const char* programErrorStr(ProgramError e) {
     switch (e) {
         case PROG_OK:            return "ok";
@@ -325,6 +392,7 @@ const char* programErrorStr(ProgramError e) {
         case PROG_ERR_FULL:      return "library full (24)";
         case PROG_ERR_NOT_FOUND: return "program not found";
         case PROG_ERR_ACTIVE:    return "cannot delete active program";
+        case PROG_ERR_FACTORY:   return "cannot delete factory program";
         case PROG_ERR_STORAGE:   return "FRAM error";
     }
     return "error";

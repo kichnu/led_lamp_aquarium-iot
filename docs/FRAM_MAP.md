@@ -62,7 +62,8 @@ struct SystemState {            // packed
     uint16_t cnt_brownout;
     uint16_t cnt_other;
     uint8_t  last_reset_reason;
-    uint8_t  _reserved[...];      // do 60 B
+    uint32_t programs_created;    // zapisy z edytora, tylko rośnie; przy starcie ≥ max seq ze slotów
+    uint8_t  _reserved[31];
     uint32_t crc32;
 };
 ```
@@ -129,7 +130,7 @@ struct ProgramHeader {          // packed, 64 B, na początku slotu
     uint32_t created_ts;          // UTC z RTC — tylko do sortowania listy w GUI, nie do rozstrzygania sync
     uint32_t payload_crc32;
     char     name[24];
-    uint8_t  _reserved[4];
+    uint32_t seq;                 // numer z programs_created (0 = fabryczny / sprzed licznika); zmiana nazwy go zachowuje
     uint32_t header_crc32;        // CRC pól nagłówka poza magic
 };
 // payload od offsetu 64: 4 × { uint8 count; { uint16 t; uint16 v; } × count }
@@ -154,8 +155,9 @@ Przy okazji: `created_ts` w nagłówku umożliwia sortowanie listy wg daty (pyta
 
 - Pusta FRAM (zły magic nagłówka): zapis HEADER, domyślne SYSTEM_STATE / LAMP_CONFIG / CHANNEL_CONFIG,
   pusta lista TOMBSTONES, instalacja programu fabrycznego do slotu 0 i ustawienie go jako aktywnego.
-- Program fabryczny instalowany **tylko** przy inicjalizacji pustej FRAM. Po jego skasowaniu nie wraca przy
-  kolejnym starcie; nie wróci też przez ESP-NOW, bo jego stały id trafia do TOMBSTONES jak każdy inny.
+- Program fabryczny jest nieusuwalny (2026-09-26): `deleteProgram()` zwraca `PROG_ERR_FACTORY`, `addTombstone()`
+  pomija jego id. Przy każdym starcie, jeśli brak go w bibliotece, `initProgramStore()` zdejmuje go z TOMBSTONES
+  (`removeTombstone()`) i instaluje w wolnym slocie; jako aktywny tylko przy pustej FRAM.
 - Pojedyncza sekcja z błędnym magic/CRC: tylko ta sekcja dostaje wartości domyślne (lazy-init).
 - Zmiana wersji layoutu obszaru systemowego: reinicjalizacja 0x0000–0x1FFF oprócz CREDENTIALS (nie trzeba
   ponownie provisioningu). Sloty 0x2000–0x7FFF nietknięte.

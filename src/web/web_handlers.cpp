@@ -160,6 +160,7 @@ static void handlePrograms(AsyncWebServerRequest* request) {
     uint64_t activeId = activeProgram().id;
     doc["active_id"] = idToHex(activeId);
     doc["capacity"]  = FRAM_PROGRAM_SLOTS;
+    doc["created_total"] = sysState().programs_created;
     JsonArray arr = doc["programs"].to<JsonArray>();
     bool activeInLibrary = false;
     for (uint8_t i = 0; i < catalogCount(); i++) {
@@ -210,14 +211,19 @@ static void handleGetProgram(AsyncWebServerRequest* request) {
     sendJson(request, doc);
 }
 
-static void handleSaveProgram(AsyncWebServerRequest* request) {
-    String name;
-    if (!postParam(request, "name", name)) { sendError(request, 400, "missing name"); return; }
+static bool nameParam(AsyncWebServerRequest* request, String& name) {
+    if (!postParam(request, "name", name)) { sendError(request, 400, "missing name"); return false; }
     name.trim();
     if (name.length() == 0 || name.length() >= PROGRAM_NAME_LEN) {
         sendError(request, 400, "name length 1-23");
-        return;
+        return false;
     }
+    return true;
+}
+
+static void handleSaveProgram(AsyncWebServerRequest* request) {
+    String name;   // opcjonalna — pusta: saveNewProgram() nada „Program NNNN”
+    if (request->hasParam("name", true) && !nameParam(request, name)) return;
 
     static Program p;
     LampLock lock;
@@ -243,6 +249,7 @@ static void handleSaveProgram(AsyncWebServerRequest* request) {
     JsonDocument doc;
     doc["success"] = true;
     doc["id"] = idToHex(newId);
+    doc["name"] = p.name;
     sendJson(request, doc);
 }
 
@@ -260,12 +267,29 @@ static void handleActivateProgram(AsyncWebServerRequest* request) {
     sendOk(request);
 }
 
+static void handleRenameProgram(AsyncWebServerRequest* request) {
+    uint64_t id;
+    if (!idParam(request, id)) { sendError(request, 400, "missing id"); return; }
+    String name;
+    if (!nameParam(request, name)) return;
+    uint64_t newId = 0;
+    ProgramError e = renameProgram(id, name.c_str(), newId);
+    if (e != PROG_OK) {
+        sendError(request, e == PROG_ERR_NOT_FOUND ? 404 : ((e == PROG_ERR_FULL || e == PROG_ERR_FACTORY) ? 409 : 500), programErrorStr(e));
+        return;
+    }
+    JsonDocument doc;
+    doc["success"] = true;
+    doc["id"] = idToHex(newId);
+    sendJson(request, doc);
+}
+
 static void handleDeleteProgram(AsyncWebServerRequest* request) {
     uint64_t id;
     if (!idParam(request, id)) { sendError(request, 400, "missing id"); return; }
     ProgramError e = deleteProgram(id);
     if (e != PROG_OK) {
-        sendError(request, e == PROG_ERR_NOT_FOUND ? 404 : (e == PROG_ERR_ACTIVE ? 409 : 500), programErrorStr(e));
+        sendError(request, e == PROG_ERR_NOT_FOUND ? 404 : ((e == PROG_ERR_ACTIVE || e == PROG_ERR_FACTORY) ? 409 : 500), programErrorStr(e));
         return;
     }
     sendOk(request);
@@ -409,6 +433,7 @@ void registerLampHandlers(AsyncWebServer& server) {
     server.on("/api/program-save",     HTTP_POST, requireAuth(handleSaveProgram));
     server.on("/api/program-activate", HTTP_POST, requireAuth(handleActivateProgram));
     server.on("/api/program-delete",   HTTP_POST, requireAuth(handleDeleteProgram));
+    server.on("/api/program-rename",   HTTP_POST, requireAuth(handleRenameProgram));
     server.on("/api/manual-enter",     HTTP_POST, requireAuth(handleManualEnter));
     server.on("/api/manual-set",       HTTP_POST, requireAuth(handleManualSet));
     server.on("/api/manual-exit",      HTTP_POST, requireAuth(handleManualExit));

@@ -179,6 +179,7 @@ bool isTombstoned(uint64_t id) {
 }
 
 bool addTombstone(uint64_t id) {
+    if (id == FACTORY_PROGRAM_ID) return false;
     if (isTombstoned(id)) return true;
     uint16_t slot = s_tombMeta.wptr;
     s_tombIds[slot] = id;
@@ -187,5 +188,24 @@ bool addTombstone(uint64_t id) {
     if (!isFramInitialized()) return true;
     // Najpierw id, potem meta — zanik zasilania między zapisami gubi najwyżej ten wpis
     bool ok = framWrite(FRAM_ADDR_TOMBSTONES + sizeof(TombstoneMeta) + slot * 8, &id, 8);
+    return saveSection(FRAM_ADDR_TOMBSTONES, s_tombMeta, TOMBSTONE_MAGIC) && ok;
+}
+
+bool removeTombstone(uint64_t id) {
+    if (!isTombstoned(id)) return true;
+    // Ring → tablica liniowa od najstarszego, bez usuwanego id; wptr = count
+    uint64_t tmp[FRAM_TOMBSTONE_CAPACITY];
+    uint16_t n = 0;
+    uint16_t start = (s_tombMeta.count < FRAM_TOMBSTONE_CAPACITY) ? 0 : s_tombMeta.wptr;
+    for (uint16_t i = 0; i < s_tombMeta.count; i++) {
+        uint64_t v = s_tombIds[(start + i) % FRAM_TOMBSTONE_CAPACITY];
+        if (v != id) tmp[n++] = v;
+    }
+    memcpy(s_tombIds, tmp, n * 8);
+    s_tombMeta.count = n;
+    s_tombMeta.wptr = n % FRAM_TOMBSTONE_CAPACITY;
+    if (!isFramInitialized()) return true;
+    // Najpierw ids, potem meta — zanik zasilania między zapisami zostawia starą (spójną) meta
+    bool ok = (n == 0) || framWrite(FRAM_ADDR_TOMBSTONES + sizeof(TombstoneMeta), s_tombIds, n * 8);
     return saveSection(FRAM_ADDR_TOMBSTONES, s_tombMeta, TOMBSTONE_MAGIC) && ok;
 }

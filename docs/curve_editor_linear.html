@@ -210,18 +210,27 @@ const getPWM = (t, i = cur) => clampV(evalSpline(splines[i], t));
 // Cała krzywa aktywnego kanału o dt minut (dt>0 = później). Doba jest cykliczna: punkty, które wychodzą
 // poza 24:00, wracają od 00:00 (i odwrotnie). Wartość na krańcach (t=0 i t=1440) jest nowa i wspólna,
 // wzięta z dawnej krzywej w chwili, która przesuwa się na północ.
+// Dawny punkt krańcowy przesuwa się jak każdy inny (bez tego zbocze przechodzące przez północ traciło stopę
+// i wolny koniec wykresu odrywał się od osi); wstawiany tylko, gdy nie leży na prostej między sąsiadami.
+// Bez round2 — zaokrąglanie co krok kumulowało błąd.
 function shiftCurve(dt) {
   if (cur < 0) return;
   const P = pts();
   const wrap = t => ((t % DAY_MIN) + DAY_MIN) % DAY_MIN;
-  const v0 = round2(clampV(evalSpline(splines[cur], wrap(-dt))));
+  const v0 = clampV(evalSpline(splines[cur], wrap(-dt)));
   const inner = [];
   for (const p of P) {
     if (p.t <= 0 || p.t >= DAY_MIN) continue;
     const t = wrap(p.t + dt);
     if (t !== 0) inner.push({ t, v: p.v });     // t=0 pokrywa punkt krańcowy
   }
+  const edge = { t: wrap(dt), v: P.length ? P[0].v : 0 };
+  if (edge.t !== 0) {
+    const without = [{ t: 0, v: v0 }, ...[...inner].sort((a, b) => a.t - b.t), { t: DAY_MIN, v: v0 }];
+    if (Math.abs(evalSpline(computeSpline(without), edge.t) - edge.v) > 1e-6) inner.push(edge);
+  }
   inner.sort((a, b) => a.t - b.t);
+  if (inner.length + 2 > MAX_POINTS) return;
   CHANNELS[cur].points = [{ t: 0, v: v0 }, ...inner, { t: DAY_MIN, v: v0 }];
   rebuild();
   updateAll();

@@ -28,6 +28,16 @@ void startLogServer() {
               LOG_SERVER_PORT, LOG_SERVER_PORT);
 }
 
+// OTA: log-socket konkuruje o pulę gniazd LWIP z połączeniem TCP, które
+// ArduinoOTA otwiera do hosta podczas transferu (wzorzec z dozownika).
+void stopLogServer() {
+    if (g_logClient) {
+        g_logClient.stop();
+    }
+    g_logServer.close();
+    g_logServerStarted = false;
+}
+
 void updateLogServer() {
     if (!g_logServerStarted) return;
 

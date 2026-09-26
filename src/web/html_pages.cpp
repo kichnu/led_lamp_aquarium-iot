@@ -210,6 +210,8 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
   .modal-title { font-size:var(--font-lg); font-weight:700; text-align:center; margin-bottom:8px; }
   .modal-text { font-size:var(--font-sm); text-align:center; color:var(--text-secondary); margin-bottom:20px; line-height:1.5; }
   .modal-actions { display:flex; gap:10px; }
+  .modal-input { display:block; width:100%; height:40px; padding:0 12px; margin-top:4px; background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); color:var(--text-primary); font-size:var(--font-md); }
+  .modal-input:focus { outline:none; border-color:var(--accent-cyan); }
   .modal-actions button { flex:1; margin:0; }
 
   /* Stepper prędkości wentylatora — wygląda jak jeden przycisk (kolory/wysokość
@@ -225,26 +227,64 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
   /* ================= RL90 Lamp — dodatki do wzorca termostatu ================= */
   :root { --ch-a:#ffff66; --ch-b:#cc33ff; --ch-c:#0066ff; --ch-d:#00ffcc; }
   .power-label { font-size:var(--font-sm); color:var(--text-muted); text-transform:uppercase; letter-spacing:.05em; align-self:center; }
-  .ch-bars { display:grid; gap:6px; margin-top:12px; }
-  .ch-bar { display:grid; grid-template-columns:18px 1fr 64px; align-items:center; gap:8px; font-size:var(--font-sm); }
-  .ch-bar b { font-family:'Courier New',monospace; }
-  .ch-track { height:10px; background:var(--bg-input); border:1px solid var(--border); border-radius:5px; overflow:hidden; }
-  /* Liniowo i tyle, ile trwa odstęp odpytywania (--poll, ustawiane w JS) — pasek jedzie płynnie
+  /* .status-main podzielony w pionie: słupki kanałów po lewej, moc/tryb po prawej */
+  .ch-bars { display:grid; grid-template-columns:repeat(4,52px); gap:6px; flex-shrink:0; padding-right:16px; border-right:1px solid var(--border); }
+  .ch-bar { display:flex; flex-direction:column; align-items:center; gap:4px; font-size:var(--font-xs); }
+  .ch-bar b { font-family:'Courier New',monospace; font-size:var(--font-sm); }
+  .ch-slot { position:relative; width:28px; height:150px; }
+  .ch-track { display:flex; flex-direction:column; justify-content:flex-end; width:100%; height:100%; background:var(--bg-primary); border:1px solid var(--border); border-radius:6px; overflow:hidden; }
+  /* Test Light: słupek = suwak. Kreska = wartość zadana, wypełnienie = faktyczne wyjście
+     (po wejściu w tryb dojeżdża rampą do 50 %). Kreska poza .ch-track, bo overflow:hidden. */
+  .ch-knob { display:none; position:absolute; left:-7px; right:-7px; bottom:0; height:6px; margin-bottom:-3px; border-radius:3px; background:var(--text-primary); box-shadow:0 0 0 1px var(--bg-primary), 0 1px 4px rgba(0,0,0,.6); pointer-events:none; }
+  .ch-bars.edit .ch-knob { display:block; }
+  .ch-bars.edit .ch-slot { cursor:ns-resize; touch-action:none; user-select:none; }
+  .ch-bars.dragging .ch-fill { transition:none; }
+  /* Liniowo i tyle, ile trwa odstęp odpytywania (--poll, ustawiane w JS) — słupek jedzie płynnie
      między odczytami zamiast skoku + postoju */
-  .ch-fill { height:100%; width:0; transition:width var(--poll,2s) linear; }
-  .ch-val { text-align:right; font-family:'Courier New',monospace; color:var(--text-secondary); }
+  .ch-fill { width:100%; height:0; transition:height var(--poll,2s) linear; }
+  .ch-val { font-family:'Courier New',monospace; color:var(--text-secondary); white-space:nowrap; }
+  @media (max-width:600px) {
+    .status-main { flex-direction:column; align-items:stretch; }
+    .ch-bars { grid-template-columns:repeat(4,1fr); justify-items:center; padding:0 0 12px; border-right:none; border-bottom:1px solid var(--border); }
+  }
+  /* Auto/Service (wzorzec z dolewki) + Night/Test Light aktywne tylko w Service Mode */
+  .mode-row { margin-top:12px; }
+  .btn-auto { background:rgba(34,197,94,0.15); border-color:rgba(34,197,94,0.3); color:var(--accent-green); }
+  .btn-auto:hover { border-color:var(--accent-green); }
+  .mode-row > button.on { border-color:var(--service-border); background:var(--service-bg); color:var(--service-text); }
   .diag { margin-top:12px; font-size:var(--font-xs); color:var(--text-muted); line-height:1.6; }
   .diag b { color:var(--text-secondary); font-weight:600; }
 
-  .prog-list { display:flex; flex-direction:column; gap:6px; }
-  .prog-row { display:flex; align-items:center; gap:8px; background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:6px 6px 6px 12px; }
+  /* Pod wykresem jedna strefa: lista programów (podgląd) albo klawiatura edytora. Oba panele w tej
+     samej komórce grida (visibility zamiast display) — wysokość strefy = klawiatura z przyciskami,
+     więc przełączanie nie przesuwa strony. contain:size: lista nie rozpycha strefy, tylko przewija się. */
+  .prog-zone { display:grid; margin-top:8px; }
+  .prog-zone > div { grid-area:1/1; min-width:0; }
+  .prog-zone > .off { visibility:hidden; pointer-events:none; }
+  #progPanel { display:flex; flex-direction:column; contain:size; }
+  .prog-list { flex:1; min-height:0; display:flex; flex-direction:column; gap:6px; overflow-y:auto; scrollbar-width:thin; scrollbar-color:var(--border) transparent; }
+  .prog-list.scroll { padding-right:6px; }
+  .prog-row { display:flex; align-items:center; gap:8px; background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:6px 6px 6px 12px; cursor:pointer; flex-shrink:0; }
   .prog-row.active { border-color:rgba(34,197,94,0.45); background:rgba(34,197,94,0.06); }
+  /* Oglądany na wykresie — obrys niezależny od „active” (zielone tło zostaje) */
+  .prog-row.selected { outline:2px solid var(--accent-blue); outline-offset:-2px; }
   .prog-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
   .prog-row button { margin:0; padding:6px 10px; font-size:var(--font-xs); }
+  .prog-row button, .prog-row .badge { border-radius:var(--radius-sm); }
+  .prog-ctrl { display:flex; align-items:center; gap:8px; flex-shrink:0; }
+  /* Mobile: nazwa w pierwszej linii, pod nią badge i przyciski — każdy 1/4 szerokości (max 4 w wierszu),
+     wyśrodkowane; fabryczny ma 3 elementy tej samej szerokości, więc zajmuje mniej miejsca */
+  @media (max-width:600px) {
+    .prog-row { flex-wrap:wrap; row-gap:8px; padding:8px; }
+    .prog-name { flex:1 0 100%; padding-left:4px; }
+    .prog-ctrl { flex:1 0 100%; justify-content:center; }
+    .prog-ctrl > * { flex:0 0 calc((100% - 24px) / 4); min-width:0; text-align:center; padding-left:0; padding-right:0; }
+    .prog-ctrl > .badge { padding-top:6px; padding-bottom:6px; }
+  }
   .prog-meta { font-size:var(--font-xs); color:var(--text-muted); margin-top:8px; }
 
   /* Edytor — port docs/curve_editor_linear.html (krzyż 3×3, karetka, wykres) */
-  #edCanvas { display:block; width:100%; height:240px; touch-action:none; background:var(--bg-primary); border:1px solid var(--border); border-radius:var(--radius-sm); }
+  #edCanvas { display:block; width:100%; height:240px; touch-action:manipulation; background:var(--bg-primary); border:1px solid var(--border); border-radius:var(--radius-sm); }
   #edTrack { position:relative; height:30px; margin-top:8px; background:var(--bg-primary); border:1px solid var(--border); border-radius:var(--radius-sm); overflow:hidden; }
   #edCarriage { position:absolute; top:50%; transform:translateY(-50%); width:20px; height:78%; background:#1e1e10; border:3px solid #ccc; border-radius:3px; cursor:grab; user-select:none; touch-action:none; }
   #edCarriage.dragging { cursor:grabbing; }
@@ -256,17 +296,9 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
   #edDel.mode-del { border-color:var(--accent-red); color:var(--accent-red); background:rgba(239,68,68,0.10); }
   #edDel.mode-add { border-color:var(--accent-green); color:var(--accent-green); background:rgba(34,197,94,0.10); }
   .ed-tools { display:flex; gap:8px; align-items:center; margin-top:10px; flex-wrap:wrap; }
-  .ed-tools input { flex:1; min-width:140px; height:40px; padding:0 12px; background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); color:var(--text-primary); font-size:var(--font-md); }
   .ed-tools button { margin:0; }
   #edFine.on { border-color:var(--accent-yellow); color:var(--accent-yellow); }
 
-  /* Tryb ręczny — 4 pionowe suwaki */
-  .sliders { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-top:14px; }
-  .slider-col { display:flex; flex-direction:column; align-items:center; gap:6px; }
-  .slider-col input[type=range] { writing-mode:vertical-lr; direction:rtl; height:180px; width:36px; accent-color:var(--c); }
-  .slider-col .val { font-family:'Courier New',monospace; font-size:var(--font-sm); color:var(--text-secondary); }
-  .slider-col .lbl { font-weight:700; color:var(--c); }
-  .btn-row > button.on { border-color:var(--service-border); background:var(--service-bg); color:var(--service-text); }
 </style>
 </head>
 <body>
@@ -297,6 +329,7 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
     </div>
   </div>
   <div class="status-main status-ok" id="statusMain">
+    <div class="ch-bars" id="chBars"></div>
     <div class="status-main-body">
       <div class="temp"><span id="power">--%</span><span class="power-label">LED power</span></div>
       <div class="status-main-sub">
@@ -310,71 +343,48 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
       </div>
     </div>
   </div>
-  <div class="ch-bars" id="chBars"></div>
-  <div class="diag" id="diag"></div>
+  <div class="btn-row mode-row">
+    <button id="btnMode" class="btn-auto">Auto Mode</button>
+    <button id="btnNight" disabled>Night Light</button>
+    <button id="btnTest" disabled>Test Light</button>
+  </div>
 </div>
 
-<!-- PROGRAMS -->
-<div class="card">
+<!-- PROGRAMS: wykres zawsze na górze; pod nim lista (podgląd) albo klawiatura (edycja) -->
+<div class="card" id="progCard">
   <div class="card-header">
     <div class="card-header-icon" style="background:rgba(34,197,94,0.15);">
-      <svg fill="none" stroke="currentColor" stroke-width="2" style="color:var(--accent-green);" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/></svg>
+      <svg fill="none" stroke="currentColor" stroke-width="2" style="color:var(--accent-green);" viewBox="0 0 24 24"><polyline points="3,18 8,10 13,14 21,5"/></svg>
     </div>
-    <h2>Programs</h2>
-  </div>
-  <div class="prog-list" id="progList"></div>
-  <div class="prog-meta" id="progMeta"></div>
-</div>
-
-<!-- EDITOR -->
-<div class="card" id="edCard" style="display:none;">
-  <div class="card-header">
-    <div class="card-header-icon" style="background:rgba(234,179,8,0.15);">
-      <svg fill="none" stroke="currentColor" stroke-width="2" style="color:var(--accent-yellow);" viewBox="0 0 24 24"><polyline points="3,18 8,10 13,14 21,5"/></svg>
-    </div>
-    <h2 id="edTitle">Editor</h2>
+    <h2 id="edTitle">Programs</h2>
   </div>
   <canvas id="edCanvas"></canvas>
   <div id="edTrack"><div id="edCarriage"></div></div>
-  <div class="ed-pad">
-    <button class="btn-ch" id="edCh0">A</button>
-    <div id="edUp">▲</div>
-    <button class="btn-ch" id="edCh1">B</button>
-    <div id="edLeft">◀</div>
-    <div id="edDel">＋</div>
-    <div id="edRight">▶</div>
-    <button class="btn-ch" id="edCh3">D</button>
-    <div id="edDown">▼</div>
-    <button class="btn-ch" id="edCh2">C</button>
-  </div>
-  <div class="ed-tools">
-    <button id="edFine" title="Fine step 0.1%">0.1%</button>
-    <button id="edView" title="View 00:00–24:00 / 08:00–24:00">08–24</button>
-    <input type="text" id="edName" maxlength="23" placeholder="Program name">
-  </div>
-  <div class="btn-row" style="margin-top:10px;">
-    <button class="primary" id="edSave">Save as new program</button>
-    <button id="edClose">Close</button>
-  </div>
-</div>
-
-<!-- MANUAL -->
-<div class="card">
-  <div class="card-header">
-    <div class="card-header-icon" style="background:rgba(249,115,22,0.15);">
-      <svg fill="none" stroke="currentColor" stroke-width="2" style="color:var(--accent-orange);" viewBox="0 0 24 24"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+  <div class="prog-zone">
+    <div id="progPanel">
+      <div class="prog-list" id="progList"></div>
+      <div class="prog-meta" id="progMeta"></div>
     </div>
-    <h2>Manual Control</h2>
-  </div>
-  <div class="btn-row">
-    <button id="btnTest">Test mode</button>
-    <button id="btnNight">Night mode</button>
-    <button id="btnExit" disabled>Back to program</button>
-  </div>
-  <div id="manualPanel" style="display:none;">
-    <div class="sliders" id="sliders"></div>
-    <div class="btn-row" style="margin-top:10px;" id="nightPresetRow">
-      <button id="btnSavePreset">Save as night preset</button>
+    <div id="edPanel" class="off">
+      <div class="ed-pad">
+        <button class="btn-ch" id="edCh0">A</button>
+        <div id="edUp">▲</div>
+        <button class="btn-ch" id="edCh1">B</button>
+        <div id="edLeft">◀</div>
+        <div id="edDel">＋</div>
+        <div id="edRight">▶</div>
+        <button class="btn-ch" id="edCh3">D</button>
+        <div id="edDown">▼</div>
+        <button class="btn-ch" id="edCh2">C</button>
+      </div>
+      <div class="ed-tools">
+        <button id="edFine" title="Fine step 0.1%">0.1%</button>
+        <button id="edView" title="View 00:00–24:00 / 08:00–24:00">08–24</button>
+      </div>
+      <div class="btn-row" style="margin-top:10px;">
+        <button class="primary" id="edSave">Save as new program</button>
+        <button id="edClose">Close</button>
+      </div>
     </div>
   </div>
 </div>
@@ -388,12 +398,19 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
     <label class="settings-field">Fan ON at power ≥ [%]<input type="number" step="1" min="0" max="100" id="fan_on_pct"></label>
     <label class="settings-field">Fan OFF at power &lt; [%]<input type="number" step="1" min="0" max="100" id="fan_off_pct"></label>
   </div>
+  <div class="settings-title" style="margin-top:16px;">Night Light preset [%]</div>
+  <div class="settings-grid" id="nightSettings"></div>
   <div class="settings-title" style="margin-top:16px;">Channels</div>
   <div class="settings-grid" id="chSettings"></div>
   <div class="btn-row" style="margin-top:10px;">
     <button class="primary" id="btnSaveSettings">Save</button>
     <button type="button" id="btnCancelSettings">Cancel</button>
   </div>
+</div>
+
+<!-- DIAGNOSTICS (tymczasowo na końcu — do przerobienia) -->
+<div class="card">
+  <div class="diag" id="diag" style="margin-top:0;"></div>
 </div>
 
 <div class="modal-overlay" id="alertModal">
@@ -415,7 +432,7 @@ const MODAL_ICONS = {
 };
 let alertCallback = null;
 let alertAutoHideTimer = null;
-const ALERT_AUTO_HIDE_MS = 1500;
+const ALERT_AUTO_HIDE_MS = 1000;
 
 function showAlert(title, msg, type) {
   clearTimeout(alertAutoHideTimer);
@@ -438,6 +455,24 @@ function showConfirm(title, msg, type, onConfirm) {
     '<button onclick="closeAlert()">Cancel</button><button class="primary" onclick="closeAlert(true)">Confirm</button>';
   alertCallback = onConfirm;
   document.getElementById('alertModal').classList.add('show');
+}
+// Okienko z polem tekstowym (zmiana nazwy); onOk(wartość) po Confirm/Enter
+function showPrompt(title, value, maxLen, onOk) {
+  clearTimeout(alertAutoHideTimer);
+  document.getElementById('alertIcon').className = 'modal-icon info';
+  document.getElementById('alertIcon').innerHTML = MODAL_ICONS.info;
+  document.getElementById('alertTitle').textContent = title;
+  const txt = document.getElementById('alertText');
+  txt.textContent = '';
+  const inp = document.createElement('input');
+  inp.type = 'text'; inp.className = 'modal-input'; inp.maxLength = maxLen; inp.value = value;
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter') closeAlert(true); });
+  txt.appendChild(inp);
+  document.getElementById('alertActions').innerHTML =
+    '<button onclick="closeAlert()">Cancel</button><button class="primary" onclick="closeAlert(true)">Save</button>';
+  alertCallback = () => onOk(inp.value.trim());
+  document.getElementById('alertModal').classList.add('show');
+  inp.focus(); inp.select();
 }
 function closeAlert(confirmed) {
   clearTimeout(alertAutoHideTimer);
@@ -476,11 +511,16 @@ function fmtUptime(s) {
 // ── Status ───────────────────────────────────────────────────────────────
 let lastStatus = null;
 let manualMode = 'program';
+// Service Mode to stan GUI: odblokowuje Night/Test Light, lampa dalej jedzie programem,
+// dopóki nie wybierze się jednego z nich (manual-enter); powrót do Auto = manual-exit.
+let serviceMode = false;
 
 (function buildBars() {
   $('chBars').innerHTML = CH.map((c, i) =>
-    '<div class="ch-bar"><b style="color:' + CH_COLORS[i] + '">' + c + '</b>' +
-    '<div class="ch-track"><div class="ch-fill" id="bar' + i + '" style="background:' + CH_COLORS[i] + '"></div></div>' +
+    '<div class="ch-bar">' +
+    '<div class="ch-slot" id="slot' + i + '"><div class="ch-track"><div class="ch-fill" id="bar' + i + '" style="background:' + CH_COLORS[i] + '"></div></div>' +
+    '<div class="ch-knob" id="knob' + i + '"></div></div>' +
+    '<b style="color:' + CH_COLORS[i] + '">' + c + '</b>' +
     '<span class="ch-val" id="val' + i + '">--</span></div>').join('');
 })();
 
@@ -497,9 +537,13 @@ async function refresh() {
   f.textContent = s.fan_on ? s.fan_pct + '%' : 'OFF';
   f.className = 'badge ' + (s.fan_on ? 'cooling' : '');
   $('clock').textContent = s.time_valid ? s.time.substring(11, 16) : 'no time';
+  if (s.mode !== manualMode) setManualUI(s.mode, s.manual);
+  // W Test Light lokalne wartości zadane są ważniejsze od odczytu, dopóki trwa przeciąganie
+  // albo czeka wysyłka — inaczej odpytywanie cofałoby kreskę pod palcem
+  else if (s.mode === 'test' && dragCh < 0 && !manualTimer) { manualValues = s.manual.slice(); drawKnobs(); }
   s.channels.forEach((c, i) => {
-    $('bar' + i).style.width = (c.out / 100) + '%';
-    $('val' + i).textContent = pct(c.out) + '%';
+    if (i !== dragCh) $('bar' + i).style.height = (c.out / 100) + '%';
+    if (s.mode !== 'test') $('val' + i).textContent = pct(c.out) + '%';
   });
   const wi = $('wifiItem');
   wi.classList.toggle('wifi-on', s.wifi); wi.classList.toggle('wifi-off', !s.wifi);
@@ -515,7 +559,6 @@ async function refresh() {
     'FRAM: <b>' + (s.fram_ok ? 'OK' : 'ERROR') + '</b> · RTC: <b>' + (s.rtc_ok ? 'OK' : 'ERROR') + '</b>' +
     (s.rtc_battery ? ' <span class="sub-danger">(battery?)</span>' : '') +
     ' · RSSI ' + s.rssi + ' dBm · ' + s.ip + ' · FW ' + s.fw;
-  if (s.mode !== manualMode) setManualUI(s.mode, s.manual);
   if (ed.open) drawCurve();
 }
 
@@ -531,46 +574,74 @@ async function loadPrograms() {
   list.innerHTML = '';
   if (!j.active_in_library) {
     const row = document.createElement('div');
-    row.className = 'prog-row active';
+    row.className = 'prog-row active' + (ed.viewId === activeId ? ' selected' : '');
     row.innerHTML = '<span class="prog-name"></span><span class="badge alarm">RAM only</span>';
     row.querySelector('.prog-name').textContent = lastStatus ? lastStatus.active_name : 'Factory';
+    row.onclick = () => showProgram(activeId);
     list.appendChild(row);
   }
   programs.forEach(p => {
     const row = document.createElement('div');
-    row.className = 'prog-row' + (p.active ? ' active' : '');
+    row.className = 'prog-row' + (p.active ? ' active' : '') + (p.id === ed.viewId ? ' selected' : '');
+    row.dataset.id = p.id;
+    // Klik w wiersz (poza przyciskami) = podgląd na wykresie
+    row.addEventListener('click', ev => { if (!ev.target.closest('button')) showProgram(p.id); });
     const name = document.createElement('span');
     name.className = 'prog-name';
     name.textContent = p.name;
     row.appendChild(name);
-    if (p.factory) row.insertAdjacentHTML('beforeend', '<span class="badge cooling">factory</span>');
+    const ctrl = document.createElement('div');   // badge + przyciski — na mobile osobna linia pod nazwą
+    ctrl.className = 'prog-ctrl';
+    row.appendChild(ctrl);
+    if (p.factory) ctrl.insertAdjacentHTML('beforeend', '<span class="badge cooling">factory</span>');
     if (p.active) {
-      row.insertAdjacentHTML('beforeend', '<span class="badge idle">active</span>');
+      ctrl.insertAdjacentHTML('beforeend', '<span class="badge idle">active</span>');
     } else {
       const b = document.createElement('button');
       b.className = 'primary'; b.textContent = 'Activate';
       b.onclick = () => activate(p);
-      row.appendChild(b);
+      ctrl.appendChild(b);
     }
     const e = document.createElement('button');
     e.textContent = 'Edit';
     e.onclick = () => openEditor(p.id);
-    row.appendChild(e);
-    const d = document.createElement('button');
-    d.className = 'danger'; d.textContent = '✕';
-    d.disabled = p.active;
-    d.title = p.active ? 'Active program cannot be deleted' : 'Delete';
-    d.onclick = () => showConfirm('Delete program', '"' + p.name + '" will be removed from the library.', 'warn', () => del(p));
-    row.appendChild(d);
+    ctrl.appendChild(e);
+    if (!p.factory) {
+      const r = document.createElement('button');
+      r.textContent = '✎'; r.title = 'Rename';
+      r.onclick = () => showPrompt('Rename program', p.name, 23, n => rename(p, n));
+      ctrl.appendChild(r);
+    }
+    // Fabryczny bez ✕ — skasowany nie wraca (tombstone), a to jedyna wzorcowa krzywa
+    if (!p.factory) {
+      const d = document.createElement('button');
+      d.className = 'danger'; d.textContent = '✕';
+      d.disabled = p.active;
+      d.title = p.active ? 'Active program cannot be deleted' : 'Delete';
+      d.onclick = () => showConfirm('Delete program', '"' + p.name + '" will be removed from the library.', 'warn', () => del(p));
+      ctrl.appendChild(d);
+    }
     list.appendChild(row);
   });
-  $('progMeta').textContent = programs.length + ' / ' + j.capacity + ' programs';
+  $('progMeta').textContent = programs.length + ' / ' + j.capacity + ' programs · ' + j.created_total + ' created';
+  list.classList.toggle('scroll', list.scrollHeight > list.clientHeight);
+  // Oglądany zniknął z listy (skasowany) albo jeszcze nic nie wczytano — pokaż aktywny
+  if (!ed.viewId || (ed.viewId !== activeId && !programs.some(p => p.id === ed.viewId))) showProgram(activeId);
 }
 
 async function activate(p) {
   try {
     await apiPost('api/program-activate', { id: p.id });
     showAlert('Activated', p.name, 'ok');
+    await loadPrograms(); refresh();
+  } catch (e) { showAlert('Error', e.message, 'err'); }
+}
+async function rename(p, name) {
+  if (!name || name === p.name) return;
+  try {
+    const j = await apiPost('api/program-rename', { id: p.id, name });
+    if (ed.viewId === p.id) { ed.viewId = ed.parent = j.id; ed.name = name; updateTitle(); }   // kopia pod nowym id
+    showAlert('Renamed', name, 'ok');
     await loadPrograms(); refresh();
   } catch (e) { showAlert('Error', e.message, 'err'); }
 }
@@ -587,8 +658,10 @@ async function del(p) {
 const DAY_MIN = 1440, MAX_POINTS = 48, STEP_NORMAL = 2, STEP_FINE = 0.1;
 const HOLD_DELAY_MS = 350, HOLD_STEP_MS = 90, SHIFT_MIN = 10, SNAP_TOL = 8, MERGE_MIN = 1;
 const VIEW_START_DEFAULT = 480;
-const ed = { open: false, chans: [[], [], [], []], cur: 2, carriage: 720, fine: false,
-             viewStart: VIEW_START_DEFAULT, viewEnd: DAY_MIN, parent: '', drag: null };
+// mode: 'view' = podgląd programu z listy (tylko karetka), 'edit' = klawiatura. open = wykres wczytany.
+const ed = { open: false, mode: 'view', chans: [[], [], [], []], cur: -1, editCur: 2, carriage: 720, fine: false,
+             viewStart: VIEW_START_DEFAULT, viewEnd: DAY_MIN, parent: '', viewId: '', name: '', dirty: false,
+             drag: null, loadSeq: 0 };
 const round2 = x => Math.round(x * 100) / 100;
 const clampV = x => Math.max(0, Math.min(100, x));
 const pts = () => ed.cur < 0 ? [] : ed.chans[ed.cur];
@@ -606,37 +679,88 @@ function evalPts(p, t) {
 }
 const getV = (t, i = ed.cur) => clampV(evalPts(ed.chans[i], t));
 
+function updateTitle() {
+  $('edTitle').textContent = (ed.mode === 'edit' ? 'Editing — ' : 'Programs — ') + ed.name;
+}
+
+// Wczytuje program na wykres; szybkie klikanie po liście — liczy się ostatnie żądanie
+async function loadChart(id) {
+  const seq = ++ed.loadSeq;
+  const j = await apiGet('api/program?id=' + id);
+  if (seq !== ed.loadSeq) return false;
+  ed.chans = CH.map(c => j[c].map(p => ({ t: p[0], v: p[1] / 100 })));
+  ed.viewId = ed.parent = j.id;
+  ed.name = j.name;
+  ed.dirty = false;
+  if (!ed.open) { ed.open = true; resizeCanvas(); }
+  document.querySelectorAll('#progList .prog-row').forEach(r =>
+    r.classList.toggle('selected', (r.dataset.id || activeId) === ed.viewId));
+  updateTitle();
+  updateAll();
+  return true;
+}
+
+async function showProgram(id) {
+  if (ed.mode !== 'view' || !id) return;
+  try { await loadChart(id); } catch (e) { showAlert('Error', e.message, 'err'); }
+}
+
+function setMode(mode) {
+  if (mode === 'edit') { ed.cur = ed.editCur; }
+  else { if (ed.cur >= 0) ed.editCur = ed.cur; ed.cur = -1; }   // podgląd: wszystkie kanały równo
+  ed.mode = mode;
+  $('progPanel').classList.toggle('off', mode === 'edit');
+  $('edPanel').classList.toggle('off', mode !== 'edit');
+  updateTitle();
+  updateAll();
+}
+
 async function openEditor(id) {
   try {
-    const j = await apiGet('api/program?id=' + id);
-    ed.chans = CH.map(c => j[c].map(p => ({ t: p[0], v: p[1] / 100 })));
-    ed.parent = j.id;
-    $('edName').value = j.name;
-    $('edTitle').textContent = 'Editor — ' + j.name;
-    $('edCard').style.display = '';
-    ed.open = true;
-    resizeCanvas();
-    updateAll();
-    $('edCard').scrollIntoView({ behavior: 'smooth' });
+    if (id !== ed.viewId && !(await loadChart(id))) return;
+    ed.dirty = false;
+    setMode('edit');
   } catch (e) { showAlert('Error', e.message, 'err'); }
 }
-$('edClose').onclick = () => { ed.open = false; $('edCard').style.display = 'none'; };
 
-// Przesunięcie całej krzywej aktywnego kanału o dt minut, doba cykliczna
+// Close: niezapisane zmiany → pytanie; porzucenie = ponowne wczytanie programu z lampy
+async function closeEditor() {
+  const back = async () => {
+    setMode('view');
+    try { await loadChart(ed.viewId); } catch (e) { showAlert('Error', e.message, 'err'); }
+  };
+  if (ed.dirty) showConfirm('Discard changes?', 'Unsaved changes to "' + ed.name + '" will be lost.', 'warn', back);
+  else setMode('view');
+}
+$('edClose').onclick = closeEditor;
+
+// Przesunięcie całej krzywej aktywnego kanału o dt minut, doba cykliczna.
+// Dawny punkt krańcowy (00:00 = 24:00) przesuwa się jak każdy inny — bez tego zbocze, które
+// przechodzi przez północ, traci stopę i wolny koniec wykresu odrywa się od osi.
+// Wstawiany tylko, gdy nie leży na prostej między sąsiadami (inaczej punkty mnożyłyby się co krok).
+// Bez round2 — zaokrąglanie przy każdym kroku kumulowało błąd; setne % dopiero przy zapisie.
 function shiftCurve(dt) {
-  if (ed.cur < 0) return;
+  if (ed.mode !== 'edit' || ed.cur < 0) return;
   const wrap = t => ((t % DAY_MIN) + DAY_MIN) % DAY_MIN;
-  const v0 = round2(getV(wrap(-dt)));
+  const P = pts();
+  const v0 = getV(wrap(-dt));
   const inner = [];
-  for (const p of pts()) {
+  for (const p of P) {
     if (p.t <= 0 || p.t >= DAY_MIN) continue;
     const t = wrap(p.t + dt);
     if (t !== 0) inner.push({ t, v: p.v });
   }
+  const edge = { t: wrap(dt), v: P.length ? P[0].v : 0 };
+  if (edge.t !== 0) {
+    const without = [{ t: 0, v: v0 }, ...[...inner].sort((a, b) => a.t - b.t), { t: DAY_MIN, v: v0 }];
+    if (Math.abs(evalPts(without, edge.t) - edge.v) > 1e-6) inner.push(edge);
+  }
   inner.sort((a, b) => a.t - b.t);
   const merged = [];
   for (const p of inner) if (!merged.length || p.t - merged[merged.length - 1].t >= MERGE_MIN) merged.push(p);
+  if (merged.length + 2 > MAX_POINTS) { showAlert('Limit', 'Max ' + MAX_POINTS + ' points per channel.', 'warn'); return; }
   ed.chans[ed.cur] = [{ t: 0, v: v0 }, ...merged, { t: DAY_MIN, v: v0 }];
+  ed.dirty = true;
   updateAll();
 }
 
@@ -647,7 +771,7 @@ function findNearbyIdx(t) {
 }
 
 function changeValue(delta) {
-  if (ed.cur < 0) return;
+  if (ed.mode !== 'edit' || ed.cur < 0) return;
   const P = pts();
   const t = Math.round(ed.carriage);
   const idx = findNearbyIdx(t);
@@ -658,6 +782,7 @@ function changeValue(delta) {
     P.push({ t, v: round2(clampV(getV(t) + delta)) });
     P.sort((a, b) => a.t - b.t);
   }
+  ed.dirty = true;
   updateAll();
 }
 
@@ -794,7 +919,8 @@ function updateAll() { positionCarriage(); drawCurve(); updatePad(); }
 
 $('edDel').addEventListener('click', () => {
   const st = centerState();
-  if (st === 'del') { pts().splice(findNearbyIdx(Math.round(ed.carriage)), 1); updateAll(); }
+  if (ed.mode !== 'edit') return;
+  if (st === 'del') { pts().splice(findNearbyIdx(Math.round(ed.carriage)), 1); ed.dirty = true; updateAll(); }
   else if (st === 'add') changeValue(0);
 });
 // Przytrzymanie ▲/▼: krok od razu, potem ciągła zmiana co HOLD_STEP_MS
@@ -824,58 +950,85 @@ $('edView').onclick = () => {
 };
 
 $('edSave').onclick = async () => {
-  const name = $('edName').value.trim();
-  if (!name) { showAlert('Name required', 'Enter a program name.', 'warn'); return; }
-  const params = { name, parent: ed.parent };
+  const params = { parent: ed.parent };   // nazwa „Program NNNN” z licznika w FRAM, zmiana przez ✎
   ['ch_a', 'ch_b', 'ch_c', 'ch_d'].forEach((k, i) => {
     params[k] = ed.chans[i].map(p => p.t + ':' + Math.round(p.v * 100)).join(',');
   });
   try {
     const j = await apiPost('api/program-save', params);
+    ed.dirty = false;
+    setMode('view');
+    ed.viewId = j.id;              // nowy program od razu zaznaczony i na wykresie
     await loadPrograms();
-    ed.parent = j.id;
-    showConfirm('Saved', '"' + name + '" saved as a new program. Activate it now?', 'ok',
-                () => activate({ id: j.id, name }));
+    await loadChart(j.id);
+    showAlert('Saved', '"' + j.name + '" saved as a new program.', 'ok');
   } catch (e) { showAlert('Save failed', e.message, 'err'); }
 };
 
-// ── Tryb ręczny ──────────────────────────────────────────────────────────
+// ── Tryb ręczny: Test Light = słupki jako suwaki, Night Light = preset z Settings ──
 let manualValues = [0, 0, 0, 0];
 let manualTimer = null;
+let dragCh = -1;
 
-(function buildSliders() {
-  $('sliders').innerHTML = CH.map((c, i) =>
-    '<div class="slider-col" style="--c:' + CH_COLORS[i] + '"><span class="lbl">' + c + '</span>' +
-    '<input type="range" min="0" max="10000" step="100" id="sl' + i + '">' +
-    '<span class="val" id="slv' + i + '">0%</span></div>').join('');
-  CH.forEach((c, i) => $('sl' + i).addEventListener('input', e => {
-    manualValues[i] = +e.target.value;
-    $('slv' + i).textContent = pct(manualValues[i]) + '%';
-    clearTimeout(manualTimer);
-    manualTimer = setTimeout(sendManual, 150);
-  }));
-})();
+function drawKnobs() {
+  CH.forEach((c, i) => {
+    $('knob' + i).style.bottom = (manualValues[i] / 100) + '%';
+    if (manualMode === 'test') $('val' + i).textContent = pct(manualValues[i]) + '%';
+  });
+}
 
 function sendManual() {
+  manualTimer = null;
   apiPost('api/manual-set', { ch_a: manualValues[0], ch_b: manualValues[1], ch_c: manualValues[2], ch_d: manualValues[3] })
     .catch(e => showAlert('Error', e.message, 'err'));
+}
+
+(function bindSlots() {
+  const setFromY = (i, y) => {
+    const r = $('slot' + i).getBoundingClientRect();
+    const v = Math.round(Math.min(1, Math.max(0, (r.bottom - y) / r.height)) * 100) * 100;   // krok 1 %
+    if (v === manualValues[i]) return;
+    manualValues[i] = v;
+    $('bar' + i).style.height = (v / 100) + '%';   // bez rampy w trybie ręcznym — wyjście idzie za kreską
+    drawKnobs();
+    clearTimeout(manualTimer);
+    manualTimer = setTimeout(sendManual, 150);
+  };
+  CH.forEach((c, i) => {
+    const slot = $('slot' + i);
+    slot.addEventListener('pointerdown', e => {
+      if (manualMode !== 'test') return;
+      dragCh = i;
+      $('chBars').classList.add('dragging');
+      slot.setPointerCapture(e.pointerId);
+      setFromY(i, e.clientY);
+      e.preventDefault();
+    });
+    slot.addEventListener('pointermove', e => { if (dragCh === i) setFromY(i, e.clientY); });
+    const end = () => { if (dragCh === i) { dragCh = -1; $('chBars').classList.remove('dragging'); } };
+    slot.addEventListener('pointerup', end);
+    slot.addEventListener('pointercancel', end);
+  });
+})();
+
+function updateModeUI() {
+  const b = $('btnMode');
+  b.textContent = serviceMode ? 'Service Mode' : 'Auto Mode';
+  b.className = serviceMode ? 'btn-service' : 'btn-auto';
+  $('btnNight').disabled = !serviceMode;
+  $('btnTest').disabled = !serviceMode;
 }
 
 function setManualUI(mode, values) {
   manualMode = mode;
   const manual = mode !== 'program';
-  $('manualPanel').style.display = manual ? '' : 'none';
-  $('btnExit').disabled = !manual;
+  if (manual) serviceMode = true;
+  updateModeUI();
+  $('chBars').classList.toggle('edit', mode === 'test');
   $('btnTest').classList.toggle('on', mode === 'test');
   $('btnNight').classList.toggle('on', mode === 'night');
-  $('nightPresetRow').style.display = mode === 'night' ? '' : 'none';
   if (values) manualValues = values.slice();
-  CH.forEach((c, i) => {
-    const s = $('sl' + i);
-    s.step = mode === 'night' ? 10 : 100;
-    s.value = manualValues[i];
-    $('slv' + i).textContent = pct(manualValues[i]) + '%';
-  });
+  drawKnobs();
 }
 
 async function enterManual(mode) {
@@ -887,17 +1040,15 @@ async function enterManual(mode) {
 }
 $('btnTest').onclick = () => enterManual('test');
 $('btnNight').onclick = () => enterManual('night');
-$('btnExit').onclick = async () => {
-  try { await apiPost('api/manual-exit'); setManualUI('program', null); refresh(); }
-  catch (e) { showAlert('Error', e.message, 'err'); }
-};
-$('btnSavePreset').onclick = async () => {
+$('btnMode').onclick = async () => {
+  if (!serviceMode) { serviceMode = true; updateModeUI(); return; }
   try {
-    await apiPost('api/config', { night_a: manualValues[0], night_b: manualValues[1], night_c: manualValues[2], night_d: manualValues[3] });
-    showAlert('Saved', 'Night preset updated.', 'ok');
+    if (manualMode !== 'program') await apiPost('api/manual-exit');
+    serviceMode = false;
+    setManualUI('program', null);
+    refresh();
   } catch (e) { showAlert('Error', e.message, 'err'); }
 };
-
 // ── Settings ─────────────────────────────────────────────────────────────
 (function buildChSettings() {
   $('chSettings').innerHTML = CH.map((c, i) =>
@@ -907,11 +1058,17 @@ $('btnSavePreset').onclick = async () => {
     '<label class="settings-field">' + c + ': label<input type="text" maxlength="11" id="lb' + i + '"></label>').join('');
 })();
 
+(function buildNightSettings() {
+  $('nightSettings').innerHTML = CH.map((c, i) =>
+    '<label class="settings-field">' + c + '<input type="number" step="0.1" min="0" max="100" id="nt' + i + '"></label>').join('');
+})();
+
 async function loadSettings() {
   const j = await apiGet('api/config');
   $('ramp_s').value = j.ramp_s; $('ramp_s').min = j.ramp_min; $('ramp_s').max = j.ramp_max;
   $('fan_on_pct').value = j.fan_on_pct;
   $('fan_off_pct').value = j.fan_off_pct;
+  j.night.forEach((v, i) => { $('nt' + i).value = (v / 100).toFixed(2); });
   j.channels.forEach((c, i) => {
     $('pf' + i).value = (c.power_frac / 100).toFixed(2);
     $('ga' + i).value = c.gamma.toFixed(2);
@@ -935,8 +1092,18 @@ $('btnSaveSettings').onclick = async () => {
     body['min_duty_' + k] = $('md' + i).value;
     body['label_' + k] = $('lb' + i).value;
   });
+  const night = CH.map((c, i) => Math.round(parseFloat($('nt' + i).value) * 100));
+  if (night.some(v => !Number.isFinite(v) || v < 0 || v > 10000)) {
+    showAlert('Error', 'Night Light preset: 0–100 %.', 'err');
+    return;
+  }
+  ['a', 'b', 'c', 'd'].forEach((k, i) => { body['night_' + k] = night[i]; });
   try {
     await apiPost('api/config', body);
+    // Włączony Night Light startuje z presetu tylko przy wejściu — nowy preset od razu na wyjście
+    if (manualMode === 'night') {
+      await apiPost('api/manual-set', { ch_a: night[0], ch_b: night[1], ch_c: night[2], ch_d: night[3] });
+    }
     showAlert('Saved', 'Settings stored in FRAM.', 'ok');
     toggleSettings();
   } catch (e) { showAlert('Error', e.message, 'err'); }

@@ -22,6 +22,7 @@
 #include "provisioning/ap_core.h"
 #include "provisioning/ap_server.h"
 #include "provisioning/prov_config.h"
+#include "ota_secret.h"          // OTA_PASSWORD — generowany przez scripts/ota_secret.py
 
 #define ENGINE_TICK_MS 100
 
@@ -81,6 +82,7 @@ void setup() {
     ArduinoOTA.onStart([]() {
         g_otaActive = true;
         LOG_INFO("=== OTA START ===");
+        stopLogServer();        // zwalnia gniazda LWIP dla połączenia OTA do hosta
     });
     ArduinoOTA.onProgress([](unsigned int, unsigned int) {
         esp_task_wdt_reset();   // zapis flash w callbacku — bez tego TWDT resetuje w trakcie OTA (dozownik)
@@ -92,6 +94,7 @@ void setup() {
     ArduinoOTA.onError([](ota_error_t error) {
         g_otaActive = false;
         LOG_WARNING("=== OTA ERROR (%d) ===", (int)error);
+        startLogServer();       // na sukces niepotrzebne — restart
     });
     ArduinoOTA.begin();
     LOG_INFO("ArduinoOTA ready (port 3232)");
