@@ -66,10 +66,8 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
   .status-main.status-warn { border-color:rgba(234,179,8,0.4); background:rgba(234,179,8,0.06); }
   .status-main.status-disabled { border-color:rgba(148,163,184,0.35); background:rgba(148,163,184,0.05); }
   .status-main-body { flex:1; min-width:0; }
-  .status-main-sub { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:8px; font-size:var(--font-sm); color:var(--text-secondary); }
   .sub-on { color:var(--accent-green); } .sub-off { color:var(--text-muted); }
   .sub-warn { color:var(--accent-yellow); } .sub-danger { color:var(--accent-red); }
-  .sub-sep { color:var(--border); }
   .status-main-wifi { display:flex; flex-direction:column; align-items:center; gap:2px; flex-shrink:0; }
   .card-header .status-main-wifi { margin-left:auto; }
   .wifi-label { font-size:.6rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:.05em; }
@@ -226,7 +224,12 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
   .fan-stepper.active .fan-step-val, .fan-stepper.active .fan-step-btn { color:var(--service-text); }
   /* ================= RL90 Lamp — dodatki do wzorca termostatu ================= */
   :root { --ch-a:#ffff66; --ch-b:#cc33ff; --ch-c:#0066ff; --ch-d:#00ffcc; }
-  .power-label { font-size:var(--font-sm); color:var(--text-muted); text-transform:uppercase; letter-spacing:.05em; align-self:center; }
+  /* Prawa część .status-main: kolumna wierszy label (ramka jak .badge, tło przezroczyste) + wartość, wyrównane do dołu */
+  /* Grid 2 kolumn: wartości zaczynają się w jednej linii (szerokość kolumny = najdłuższy label) */
+  .ctl-list { display:grid; grid-template-columns:auto 1fr; align-items:end; justify-items:start; gap:10px; font-size:var(--font-md); color:var(--text-primary); }
+  .ctl { display:contents; }
+  .ctl-label { display:inline-block; padding:4px 10px; border-radius:Var(--radius-sm); font-size:Var(--font-sm); font-weight:600; text-transform:uppercase; letter-spacing:.05em; background:transparent; border:1px solid rgba(34,197,94,0.35); color:var(--text-primary); }
+  .ctl .temp { font-size:24px; }  /* = dotychczasowe 3em body (3 × 1rem / .8rem) */
   /* .status-main podzielony w pionie: słupki kanałów po lewej, moc/tryb po prawej */
   .ch-bars { display:grid; grid-template-columns:repeat(4,52px); gap:6px; flex-shrink:0; padding-right:16px; border-right:1px solid var(--border); }
   .ch-bar { display:flex; flex-direction:column; align-items:center; gap:4px; font-size:var(--font-xs); }
@@ -246,13 +249,17 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
   @media (max-width:600px) {
     .status-main { flex-direction:column; align-items:stretch; }
     .ch-bars { grid-template-columns:repeat(4,1fr); justify-items:center; padding:0 0 12px; border-right:none; border-bottom:1px solid var(--border); }
+    /* .ctl-list ~25 % mniejsza (rozmiary są w rem/px, więc każdy osobno) */
+    .ctl-list { font-size:calc(var(--font-md) * .75); }
+    .ctl-label { font-size:calc(var(--font-sm) * .75); }
+    .ctl .temp { font-size:18px; }
   }
   /* Auto/Service (wzorzec z dolewki) + Night/Test Light aktywne tylko w Service Mode */
   .mode-row { margin-top:12px; }
   .btn-auto { background:rgba(34,197,94,0.15); border-color:rgba(34,197,94,0.3); color:var(--accent-green); }
   .btn-auto:hover { border-color:var(--accent-green); }
   .mode-row > button.on { border-color:var(--service-border); background:var(--service-bg); color:var(--service-text); }
-  .diag { margin-top:12px; font-size:var(--font-xs); color:var(--text-muted); line-height:1.6; }
+  .diag { margin-top:16px; padding-top:12px; border-top:1px solid var(--border); font-size:var(--font-xs); color:var(--text-muted); line-height:1.6; }
   .diag b { color:var(--text-secondary); font-weight:600; }
 
   /* Pod wykresem jedna strefa: lista programów (podgląd) albo klawiatura edytora. Oba panele w tej
@@ -331,15 +338,11 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
   <div class="status-main status-ok" id="statusMain">
     <div class="ch-bars" id="chBars"></div>
     <div class="status-main-body">
-      <div class="temp"><span id="power">--%</span><span class="power-label">LED power</span></div>
-      <div class="status-main-sub">
-        <span class="badge idle" id="mode">PROGRAM</span>
-        <span class="sub-sep">•</span>
-        <span id="activeName">—</span>
-        <span class="sub-sep">•</span>
-        <span>Fan: <span class="badge" id="fan">OFF</span></span>
-        <span class="sub-sep">•</span>
-        <span id="clock">--:--</span>
+      <div class="ctl-list">
+        <div class="ctl"><span class="ctl-label">LED power</span><div class="temp"><span id="power">--%</span></div></div>
+        <div class="ctl"><span class="ctl-label" id="mode">Program</span><span id="activeName">—</span></div>
+        <div class="ctl"><span class="ctl-label">Fan</span><span id="fan">OFF</span></div>
+        <div class="ctl"><span class="ctl-label">Time</span><span id="clock">--:--</span></div>
       </div>
     </div>
   </div>
@@ -406,11 +409,7 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
     <button class="primary" id="btnSaveSettings">Save</button>
     <button type="button" id="btnCancelSettings">Cancel</button>
   </div>
-</div>
-
-<!-- DIAGNOSTICS (tymczasowo na końcu — do przerobienia) -->
-<div class="card">
-  <div class="diag" id="diag" style="margin-top:0;"></div>
+  <div class="diag" id="diag"></div>
 </div>
 
 <div class="modal-overlay" id="alertModal">
@@ -531,11 +530,9 @@ async function refresh() {
   $('power').textContent = s.power_pct.toFixed(1) + '%';
   const m = $('mode');
   m.textContent = s.mode.toUpperCase() + (s.ramp ? ' ↗' : '');
-  m.className = 'badge ' + (s.mode === 'program' ? 'idle' : 'heating');
   $('activeName').textContent = s.active_name;
   const f = $('fan');
   f.textContent = s.fan_on ? s.fan_pct + '%' : 'OFF';
-  f.className = 'badge ' + (s.fan_on ? 'cooling' : '');
   $('clock').textContent = s.time_valid ? s.time.substring(11, 16) : 'no time';
   if (s.mode !== manualMode) setManualUI(s.mode, s.manual);
   // W Test Light lokalne wartości zadane są ważniejsze od odczytu, dopóki trwa przeciąganie
