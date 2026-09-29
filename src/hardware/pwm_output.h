@@ -13,9 +13,9 @@
 // Zwraca true, gdy start nastąpił po planowym restarcie z hold (restart dobowy).
 bool initPwmOutputs();
 
-void     setLedDuty(uint8_t ch, uint32_t duty);   // 0–16384
+void     setLedDuty(uint8_t ch, uint32_t duty);   // 0–16384, obcinane do 16383
 uint32_t getLedDuty(uint8_t ch);
-void     setFanDuty(uint32_t duty);               // 0–16384
+void     setFanDuty(uint32_t duty);               // 0–16384, obcinane do 16383
 uint32_t getFanDuty();
 
 void     allOutputsOff();                         // A–D i FAN = 0 (OTA, awaria)

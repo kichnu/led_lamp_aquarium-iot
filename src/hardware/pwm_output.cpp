@@ -11,6 +11,10 @@ static const ledc_channel_t FAN_CHANNEL = LEDC_CHANNEL_4;
 static const ledc_timer_t   PWM_TIMER   = LEDC_TIMER_0;
 #define HOLD_MAGIC 0x484F4C44  // "HOLD"
 
+// 14 bit to maksimum timera LEDC na C3 — duty = 2^14 przepełnia licznik i daje 0 %.
+// Górny limit 2^14 − 1 (99,994 %, szpilka LOW ~0,12 µs na okres).
+static const uint32_t DUTY_LIMIT = PWM_MAX_DUTY - 1;
+
 // Przeżywa reset programowy (nie power-on) — znacznik restartu z hold
 RTC_NOINIT_ATTR static uint32_t s_holdMagic;
 
@@ -51,7 +55,7 @@ bool initPwmOutputs() {
 
 void setLedDuty(uint8_t ch, uint32_t duty) {
     if (ch >= NUM_CHANNELS) return;
-    if (duty > PWM_MAX_DUTY) duty = PWM_MAX_DUTY;
+    if (duty > DUTY_LIMIT) duty = DUTY_LIMIT;
     if (duty == s_ledDuty[ch]) return;
     s_ledDuty[ch] = duty;
     ledc_set_duty(LEDC_LOW_SPEED_MODE, (ledc_channel_t)ch, duty);
@@ -63,7 +67,7 @@ uint32_t getLedDuty(uint8_t ch) {
 }
 
 void setFanDuty(uint32_t duty) {
-    if (duty > PWM_MAX_DUTY) duty = PWM_MAX_DUTY;
+    if (duty > DUTY_LIMIT) duty = DUTY_LIMIT;
     if (duty == s_fanDuty) return;
     s_fanDuty = duty;
     ledc_set_duty(LEDC_LOW_SPEED_MODE, FAN_CHANNEL, duty);
