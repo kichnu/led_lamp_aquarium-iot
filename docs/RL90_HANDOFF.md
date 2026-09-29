@@ -57,7 +57,8 @@ Ustalenia architektoniczne po testach: sekcje 8–13.
 - Masy: GND modułu = GND AMS1117 = GND Hi7001 (wspólna).
 
 ### 1.5 Moc
-- Lampa bez modułu (wszystko 100%): **2,6 A przy 24 V ≈ 62 W** (zasilacz warsztatowy). Producent deklaruje 90 W.
+- Lampa bez modułu (wszystko 100%): **2,6 A przy 24 V ≈ 62 W** (zasilacz warsztatowy). Producent deklaruje 90 W. Pomiar zgrubny
+  (zasilacz bez ograniczenia prądu) — do kalibracji mocy patrz `POWER_CALIBRATION.md`.
 
 ---
 

@@ -18,6 +18,7 @@ docs/
   USTALENIA.md                    what is settled / still open before coding — START HERE, keep it current
   RL90_HANDOFF.md                 hardware facts, measurements, architecture (§1–§15)
   FRAM_MAP.md                     FRAM layout (8 KB system area + 24 × 1 KB program slots)
+  POWER_CALIBRATION.md            plan: GUI power in W (measurements, shared-LED model, calibration page, INA226)
   CURVE_EDITOR_IMPLEMENTATION.md  curve editor / program format / API sketch (partly stale: still Akima, see USTALENIA)
   curve_editor_linear.html        chosen editor prototype (polyline) — make editor changes HERE
   curve_editor.html               older Akima variant, kept for reference only
