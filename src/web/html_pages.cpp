@@ -290,6 +290,7 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
   /* Edytor — port docs/curve_editor_linear.html (krzyż 3×3, karetka, wykres) */
   #edCanvas { display:block; width:100%; height:240px; touch-action:manipulation; background:var(--bg-primary); border:1px solid var(--border); border-radius:var(--radius-sm); }
   #edTrack { position:relative; height:30px; margin-top:8px; background:var(--bg-primary); border:1px solid var(--border); border-radius:var(--radius-sm); overflow:hidden; }
+  #edTrack.off { display:none; }   /* karetka tylko w edycji */
   #edCarriage { position:absolute; top:50%; transform:translateY(-50%); width:20px; height:78%; background:#1e1e10; border:3px solid #ccc; border-radius:3px; cursor:grab; user-select:none; touch-action:none; }
   #edCarriage.dragging { cursor:grabbing; }
   .ed-pad { display:grid; gap:8px; margin-top:8px; grid-template-columns:1fr 1fr 1fr; grid-template-rows:repeat(3,58px); }
@@ -359,7 +360,7 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
     <h2 id="edTitle">Programs</h2>
   </div>
   <canvas id="edCanvas"></canvas>
-  <div id="edTrack"><div id="edCarriage"></div></div>
+  <div id="edTrack" class="off"><div id="edCarriage"></div></div>
   <div class="prog-zone">
     <div id="progPanel">
       <div class="prog-list" id="progList"></div>
@@ -701,6 +702,7 @@ function setMode(mode) {
   if (mode === 'edit') { ed.cur = ed.editCur; }
   else { if (ed.cur >= 0) ed.editCur = ed.cur; ed.cur = -1; }   // podgląd: wszystkie kanały równo
   ed.mode = mode;
+  $('edTrack').classList.toggle('off', mode !== 'edit');   // przed updateAll — positionCarriage mierzy tor
   $('progPanel').classList.toggle('off', mode === 'edit');
   $('edPanel').classList.toggle('off', mode !== 'edit');
   updateTitle();
@@ -800,8 +802,10 @@ function tracePath(i) {
   for (let t = ed.viewStart + 2; t <= ed.viewEnd; t += 2) ctx.lineTo(cX(t), cY(getV(t, i)));
 }
 
+// Edycja: wszystko. Podgląd aktywnego: linia "teraz" + bieżąca godzina. Podgląd innego: same krzywe.
 function drawCurve() {
   if (!ed.open || !W) return;
+  const edit = ed.mode === 'edit', live = !edit && ed.viewId === activeId;
   ctx.clearRect(0, 0, W, H);
   ctx.lineWidth = 1; ctx.font = '10px monospace';
   const span = ed.viewEnd - ed.viewStart;
@@ -812,7 +816,7 @@ function drawCurve() {
     ctx.fillStyle = '#94a3b8'; ctx.fillText(hhmm(t), cX(t) - 13, H - 6);
   }
   // linia "teraz"
-  if (lastStatus && lastStatus.time_valid && lastStatus.minute >= ed.viewStart) {
+  if ((edit || live) && lastStatus && lastStatus.time_valid && lastStatus.minute >= ed.viewStart) {
     ctx.strokeStyle = '#22d3d5'; ctx.globalAlpha = 0.5; ctx.setLineDash([2, 4]);
     ctx.beginPath(); ctx.moveTo(cX(lastStatus.minute), PAD.t); ctx.lineTo(cX(lastStatus.minute), H - PAD.b); ctx.stroke();
     ctx.setLineDash([]); ctx.globalAlpha = 1;
@@ -840,6 +844,12 @@ function drawCurve() {
       ctx.strokeStyle = '#0a0f1a'; ctx.lineWidth = 1.5; ctx.fill(); ctx.stroke();
     });
   }
+  if (live) {
+    ctx.font = 'bold 18px monospace'; ctx.fillStyle = '#f1f5f9'; ctx.textBaseline = 'top'; ctx.textAlign = 'right';
+    ctx.fillText(lastStatus && lastStatus.time_valid ? lastStatus.time.substring(11, 16) : '--:--', W - 10, 8);
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  }
+  if (!edit) return;
   // karetka
   const kx = cX(ed.carriage);
   ctx.setLineDash([3, 3]);
