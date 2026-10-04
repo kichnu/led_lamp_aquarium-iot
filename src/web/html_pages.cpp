@@ -104,8 +104,6 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
     .energy-reset-info { text-align:center; }
   }
 
-  .btn-service { background:var(--service-bg); border-color:var(--service-border); color:var(--service-text); }
-  .btn-service:hover { background:var(--service-bg-hover); border-color:var(--service-border); }
   .badge { display:inline-block; padding:4px 10px; border-radius:12px; font-size:.85em; font-weight:600; border:1px solid transparent; }
   .idle    { background:rgba(34,197,94,0.15);  color:var(--accent-green);  border-color:rgba(34,197,94,0.3); }
   .heating { background:rgba(234,179,8,0.15);  color:var(--accent-yellow); border-color:rgba(234,179,8,0.3); }
@@ -254,11 +252,10 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
     .ctl-label { font-size:calc(var(--font-sm) * .75); }
     .ctl .temp { font-size:18px; }
   }
-  /* Auto/Service (wzorzec z dolewki) + Night/Test Light aktywne tylko w Service Mode */
+  /* Auto / Night Light / Test Light — przełącznik: aktywny zawsze dokładnie jeden (zielony) */
   .mode-row { margin-top:12px; }
-  .btn-auto { background:rgba(34,197,94,0.15); border-color:rgba(34,197,94,0.3); color:var(--accent-green); }
-  .btn-auto:hover { border-color:var(--accent-green); }
-  .mode-row > button.on { border-color:var(--service-border); background:var(--service-bg); color:var(--service-text); }
+  .mode-row > button.on { background:rgba(34,197,94,0.15); border-color:rgba(34,197,94,0.3); color:var(--accent-green); }
+  .mode-row > button.on:hover { border-color:var(--accent-green); }
   .diag { margin-top:16px; padding-top:12px; border-top:1px solid var(--border); font-size:var(--font-xs); color:var(--text-muted); line-height:1.6; }
   .diag b { color:var(--text-secondary); font-weight:600; }
 
@@ -347,9 +344,9 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
     </div>
   </div>
   <div class="btn-row mode-row">
-    <button id="btnMode" class="btn-auto">Auto Mode</button>
-    <button id="btnNight" disabled>Night Light</button>
-    <button id="btnTest" disabled>Test Light</button>
+    <button id="btnMode" class="on">Auto Mode</button>
+    <button id="btnNight">Night Light</button>
+    <button id="btnTest">Test Light</button>
   </div>
 </div>
 
@@ -509,10 +506,8 @@ function fmtUptime(s) {
 
 // ── Status ───────────────────────────────────────────────────────────────
 let lastStatus = null;
+// Auto Mode = program, Night/Test Light = manual-enter; powrót do Auto = manual-exit
 let manualMode = 'program';
-// Service Mode to stan GUI: odblokowuje Night/Test Light, lampa dalej jedzie programem,
-// dopóki nie wybierze się jednego z nich (manual-enter); powrót do Auto = manual-exit.
-let serviceMode = false;
 
 (function buildBars() {
   $('chBars').innerHTML = CH.map((c, i) =>
@@ -1008,20 +1003,10 @@ function sendManual() {
   });
 })();
 
-function updateModeUI() {
-  const b = $('btnMode');
-  b.textContent = serviceMode ? 'Service Mode' : 'Auto Mode';
-  b.className = serviceMode ? 'btn-service' : 'btn-auto';
-  $('btnNight').disabled = !serviceMode;
-  $('btnTest').disabled = !serviceMode;
-}
-
 function setManualUI(mode, values) {
   manualMode = mode;
-  const manual = mode !== 'program';
-  if (manual) serviceMode = true;
-  updateModeUI();
   $('chBars').classList.toggle('edit', mode === 'test');
+  $('btnMode').classList.toggle('on', mode === 'program');
   $('btnTest').classList.toggle('on', mode === 'test');
   $('btnNight').classList.toggle('on', mode === 'night');
   if (values) manualValues = values.slice();
@@ -1029,6 +1014,7 @@ function setManualUI(mode, values) {
 }
 
 async function enterManual(mode) {
+  if (manualMode === mode) return;
   try {
     const j = await apiPost('api/manual-enter', { mode });
     setManualUI(mode, j.values);
@@ -1038,10 +1024,9 @@ async function enterManual(mode) {
 $('btnTest').onclick = () => enterManual('test');
 $('btnNight').onclick = () => enterManual('night');
 $('btnMode').onclick = async () => {
-  if (!serviceMode) { serviceMode = true; updateModeUI(); return; }
+  if (manualMode === 'program') return;
   try {
-    if (manualMode !== 'program') await apiPost('api/manual-exit');
-    serviceMode = false;
+    await apiPost('api/manual-exit');
     setManualUI('program', null);
     refresh();
   } catch (e) { showAlert('Error', e.message, 'err'); }
