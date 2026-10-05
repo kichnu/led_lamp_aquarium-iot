@@ -11,7 +11,7 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>RL90 Lamp</title>
+<title>REEF Lamp</title>
 <style>
   :root {
     --bg-primary:#0a0f1a; --bg-card:#111827; --bg-input:#1e293b; --border:#2d3a4f;
@@ -296,8 +296,8 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
   .ed-pad { display:grid; gap:8px; margin-top:8px; grid-template-columns:1fr 1fr 1fr; grid-template-rows:repeat(3,58px); }
   .ed-pad > div, .ed-pad > button { margin:0; display:flex; align-items:center; justify-content:center; background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); color:var(--text-primary); font-size:22px; cursor:pointer; user-select:none; touch-action:manipulation; -webkit-tap-highlight-color:transparent; }
   .ed-pad > div:active { border-color:var(--accent-cyan); }
-  .ed-pad .btn-ch { font-family:'Courier New',monospace; font-weight:700; font-size:18px; padding:0; }
-  .ed-pad .btn-ch.active { color:var(--c); border-color:var(--c); }
+  .ed-pad .btn-ch { font-family:'Courier New',monospace; font-weight:700; font-size:18px; padding:0; color:var(--c, var(--text-primary)); }
+  .ed-pad .btn-ch.active { border-color:var(--c); }
   #edDel.mode-del { border-color:var(--accent-red); color:var(--accent-red); background:rgba(239,68,68,0.10); }
   #edDel.mode-add { border-color:var(--accent-green); color:var(--accent-green); background:rgba(34,197,94,0.10); }
   .ed-tools { display:flex; gap:8px; align-items:center; margin-top:10px; flex-wrap:wrap; }
@@ -314,7 +314,7 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
     <div class="logo-icon">
       <svg viewBox="0 0 24 24"><path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z"/></svg>
     </div>
-    <h1>RL90 Lamp</h1>
+    <h1>REEF Lamp</h1>
   </div>
   <div class="topbar-actions">
     <button class="btn-back" id="btnLogout">Back</button>
@@ -817,9 +817,9 @@ function drawCurve() {
   }
   // linia "teraz"
   if ((edit || live) && lastStatus && lastStatus.time_valid && lastStatus.minute >= ed.viewStart) {
-    ctx.strokeStyle = '#22d3d5'; ctx.globalAlpha = 0.5; ctx.setLineDash([2, 4]);
+    ctx.strokeStyle = '#f1f5f9'; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.5; ctx.setLineDash([2, 4]);
     ctx.beginPath(); ctx.moveTo(cX(lastStatus.minute), PAD.t); ctx.lineTo(cX(lastStatus.minute), H - PAD.b); ctx.stroke();
-    ctx.setLineDash([]); ctx.globalAlpha = 1;
+    ctx.setLineDash([]); ctx.globalAlpha = 1; ctx.lineWidth = 1;
   }
   CH.forEach((c, i) => {
     if (i === ed.cur) return;
@@ -1134,7 +1134,7 @@ static const char LOGIN_HTML[] PROGMEM = R"rawliteral(
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>RL90 Lamp — Login</title>
+<title>REEF Lamp — Login</title>
 <style>
   :root {
     --bg-primary:#0a0f1a; --bg-card:#111827; --border:#2d3a4f;
@@ -1152,7 +1152,7 @@ static const char LOGIN_HTML[] PROGMEM = R"rawliteral(
 </head>
 <body>
 <div class="card">
-  <h1>RL90 Lamp</h1>
+  <h1>REEF Lamp</h1>
   <form id="f">
     <input type="password" id="password" placeholder="Hasło" autofocus>
     <button type="submit">Zaloguj</button>

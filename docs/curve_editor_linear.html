@@ -33,12 +33,12 @@
   /* Wybór kanału — narożniki krzyża, między strzałkami PWM i czasu */
   .btn-ch {
     background: #1a1a1a; border: 1px solid #2a2a2a;
-    color: #ccc; font-family: monospace; font-size: 18px; font-weight: bold;
+    color: var(--c, #ccc); font-family: monospace; font-size: 18px; font-weight: bold;
     display: flex; align-items: center; justify-content: center;
     cursor: pointer; touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
   }
-  .btn-ch.active { color: var(--c); border-color: var(--c); }
+  .btn-ch.active { border-color: var(--c); }
   #btn-ch-A { grid-area: 1 / 1; }
   #btn-ch-B { grid-area: 1 / 3; }
   #btn-ch-D { grid-area: 3 / 1; }
