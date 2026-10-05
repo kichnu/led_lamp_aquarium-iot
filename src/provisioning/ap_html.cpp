@@ -7,7 +7,7 @@ const char SETUP_PAGE_HTML[] PROGMEM = R"rawliteral(
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RL90 Lamp Setup</title>
+    <title>REEF Lamp Setup</title>
     <style>
         * {
             margin: 0;
@@ -276,7 +276,7 @@ const char SETUP_PAGE_HTML[] PROGMEM = R"rawliteral(
 <body>
     <div class="container">
         <div class="header">
-            <h1>RL90 Lamp</h1>
+            <h1>REEF Lamp</h1>
             <p>Device Configuration</p>
         </div>
         
@@ -339,7 +339,7 @@ const char SETUP_PAGE_HTML[] PROGMEM = R"rawliteral(
         </div>
         
         <div class="footer">
-            RL90 Lamp (XIAO ESP32-C3) | Provisioning Mode
+            REEF Lamp (XIAO ESP32-C3) | Provisioning Mode
         </div>
     </div>
 

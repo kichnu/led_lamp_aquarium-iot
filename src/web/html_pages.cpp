@@ -1,6 +1,6 @@
 #include "html_pages.h"
 
-// GUI lampy RL90. CSS: pełny wzorzec z termostatu (thermo_control-iot) + dodatki
+// GUI lampy RL90. CSS: wzorzec z termostatu (thermo_control-iot, bez nieużywanych bloków) + dodatki
 // lampy na końcu bloku <style>. Kolor przewodni do ustalenia — zmienne w :root.
 // Strony serwowane z flasha bez kopii do heapu (web_handlers.cpp, sendPage()).
 // Ścieżki API względne ('api/...') — działa też za nginx pod /device/lampN/.
@@ -16,18 +16,14 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
   :root {
     --bg-primary:#0a0f1a; --bg-card:#111827; --bg-input:#1e293b; --border:#2d3a4f;
     --text-primary:#f1f5f9; --text-secondary:#94a3b8; --text-muted:#64748b;
-    --accent-blue:#38bdf8; --accent-blue-dark:#1d4ed8; --accent-cyan:#22d3d5; --accent-green:#22c55e;
-    --accent-red:#ef4444; --accent-orange:#f97316; --accent-yellow:#eab308;
+    --accent-blue:#38bdf8; --accent-cyan:#22d3d5; --accent-green:#22c55e;
+    --accent-red:#ef4444; --accent-yellow:#eab308;
     --radius:12px; --radius-sm:8px; --radius-lg:16px;
     --font-xs:.72rem; --font-sm:.8rem; --font-md:.9rem; --font-lg:1.05rem;
     --transition-fast:.15s ease;
     --shadow:0 4px 24px rgba(0,0,0,.4);
-    --service-bg:rgba(249,115,22,0.10); --service-bg-hover:rgba(249,115,22,0.20);
-    --service-border:rgba(249,115,22,0.35); --service-text:#f97316;
   }
-  /* Bez tego padding/border liczy się PO podziale przestrzeni przez flex —
-     .fan-stepper (0 własnego paddingu + 2px border) i przyciski (40px
-     paddingu + 2px border) wychodziły na różne szerokości mimo flex:1 1 0. */
+  /* Bez tego padding/border liczy się PO podziale przestrzeni przez flex (.btn-row, flex:1 1 0). */
   *, *::before, *::after { box-sizing:border-box; }
   body { font-family: sans-serif; background:var(--bg-primary); color:var(--text-primary); margin:0; padding:0; }
   .container { max-width:800px; margin:0 auto; padding:16px; }
@@ -35,19 +31,6 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
   h2 { color:var(--text-secondary); font-size:var(--font-md); font-weight:600; text-transform:uppercase; letter-spacing:.05em; margin:0 0 8px; }
   .card { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); padding:20px; margin:8px 0; box-shadow:var(--shadow); }
   .temp { display:flex; align-items:center; flex-wrap:wrap; column-gap:14px; row-gap:2px; font-size:3em; color:var(--text-primary); }
-  /* Kolor #temp wg stanu (2026-07-25, rozszerzone 2026-08-15): heating=niebieski,
-     thermal-buffer=żółty (cicha uwaga o buforze dzień/noc, target..fan_on_point),
-     cooling=pomarańczowy (fan aktywny, fan_on_point..alarm_delta_high — bez tego
-     ten zakres wypadał "biały", jakby nic się nie działo), alarm HIGH/TREND/
-     SENSOR=czerwony, alarm LOW=wyraźny ciemny niebieski (odróżnia się od zwykłego
-     heating-blue, mimo że tło/border karty i tak idzie na czerwono jak przy
-     każdym alarmie). */
-  #temp.temp-heating  { color:var(--accent-blue); }
-  #temp.temp-buffer   { color:var(--accent-yellow); }
-  #temp.temp-cooling  { color:var(--accent-orange); }
-  #temp.temp-alarm    { color:var(--accent-red); }
-  #temp.temp-alarm-low{ color:var(--accent-blue-dark); }
-  #temp { transition:font-size .2s ease; }
 
   /* Nagłówek karty (wzorzec z dolewki: ikona-badge + uppercase h2 + separator) */
   .logo { display:flex; align-items:center; gap:12px; }
@@ -62,12 +45,9 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
   .status-main { display:flex; align-items:center; justify-content:space-between; background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:12px 16px; gap:12px; position:relative; }
   .status-main.status-ok { border-color:rgba(34,197,94,0.35); background:rgba(34,197,94,0.05); }
   .status-main.status-ok::after { content:''; position:absolute; top:8px; right:8px; width:6px; height:6px; background:var(--accent-green); border-radius:50%; animation:pulse 2s infinite; }
-  .status-main.status-error { border-color:rgba(239,68,68,0.4); background:rgba(239,68,68,0.06); }
   .status-main.status-warn { border-color:rgba(234,179,8,0.4); background:rgba(234,179,8,0.06); }
-  .status-main.status-disabled { border-color:rgba(148,163,184,0.35); background:rgba(148,163,184,0.05); }
   .status-main-body { flex:1; min-width:0; }
-  .sub-on { color:var(--accent-green); } .sub-off { color:var(--text-muted); }
-  .sub-warn { color:var(--accent-yellow); } .sub-danger { color:var(--accent-red); }
+  .sub-danger { color:var(--accent-red); }
   .status-main-wifi { display:flex; flex-direction:column; align-items:center; gap:2px; flex-shrink:0; }
   .card-header .status-main-wifi { margin-left:auto; }
   .wifi-label { font-size:.6rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:.05em; }
@@ -76,37 +56,8 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
   .status-main-wifi.wifi-off .wifi-dot { color:var(--text-muted); }
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
 
-  /* Karta Energy — wzorzec wielkości z .temp (System Status), ale bez
-     obramowanego boxa (--text-secondary zamiast --accent-blue, brak
-     .status-main). Reset+timestamp we wspólnym rodzicu (.energy-reset-group),
-     żeby na mobile poprawnie wylądowały POD licznikiem (column), a na
-     desktopie po prawej (row, patrz .energy-row). */
-  .energy-row { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
-  .energy-total { font-size:1.5em; color:var(--text-secondary); font-weight:300; }
-  .energy-total-value>span { font-size:2.5em; }
-  /* Heartbeat: krótki flash przy przeskoczeniu o kolejne 0.01 kWh (patrz
-     refresh() — porównanie zaokrąglonego stringa, nie samego pollingu 5s). */
-  @keyframes energy-tick { 0%{ color:var(--accent-yellow); } 100%{ color:inherit; } }
-  .energy-total-value.energy-tick>span { animation:energy-tick .8s ease; }
-
-  .energy-reset-group { display:flex; flex-direction:column; align-items:flex-end; gap:8px; }
-  .energy-reset-info { font-size:var(--font-sm); color:var(--text-secondary); text-align:right; }
-  .energy-reset-info b { color:var(--text-primary); font-family:'Courier New',monospace; }
-  @media (max-width:600px) {
-    .energy-row { flex-direction:column; align-items:stretch; }
-    /* Label i wartość+jednostka w osobnych spanach (.energy-total-label/-value)
-       specjalnie po to, żeby wymusić podział na dwie linie TYLKO na mobile —
-       na desktopie oba zostają inline w jednym wierszu (bez zmian). */
-    .energy-total-label, .energy-total-value { display:block; }
-    .energy-total-value>span { font-size:2em; }
-    .energy-reset-group { align-items:stretch; }
-    .energy-reset-group button { width:100%; }
-    .energy-reset-info { text-align:center; }
-  }
-
   .badge { display:inline-block; padding:4px 10px; border-radius:12px; font-size:.85em; font-weight:600; border:1px solid transparent; }
   .idle    { background:rgba(34,197,94,0.15);  color:var(--accent-green);  border-color:rgba(34,197,94,0.3); }
-  .heating { background:rgba(234,179,8,0.15);  color:var(--accent-yellow); border-color:rgba(234,179,8,0.3); }
   .cooling { background:rgba(34,211,213,0.15); color:var(--accent-cyan);   border-color:rgba(34,211,213,0.3); }
   .alarm   { background:rgba(239,68,68,0.15);  color:var(--accent-red);    border-color:rgba(239,68,68,0.3); }
   /* Panel "Algorithm Settings" — wzorzec z dolewki (settings.png): przycisk
@@ -128,69 +79,17 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
 
   /* Rząd przycisków wypełniający całą dostępną szerokość (System Control) */
   .btn-row { display:flex; flex-wrap:wrap; gap:8px; }
-  .btn-row > button, .btn-row > .fan-stepper { flex:1 1 0; min-width:0; margin:0; padding-left:20px; padding-right:20px;}
+  .btn-row > button { flex:1 1 0; min-width:0; margin:0; padding-left:20px; padding-right:20px;}
   @media (max-width:600px) {
     .btn-row { flex-direction:column; }
-    /* flex-basis:0 na osi pionowej (column) + overflow:hidden na .fan-stepper
-       zerowały jego min-content wysokość (klasyczny problem flex
-       min-height:auto+overflow) — w kolumnie liczy się naturalna wysokość,
-       nie równy podział, więc flex-basis wraca do auto. */
-    .btn-row > button, .btn-row > .fan-stepper { flex:0 0 auto; width:100%; }
+    .btn-row > button { flex:0 0 auto; width:100%; }
   }
-  table { border-collapse: collapse; width:100%; font-size:var(--font-sm); }
-  th, td { text-align:left; padding:4px 8px; border-bottom:1px solid var(--border); color:var(--text-secondary); }
-  .err-text { color:var(--accent-red); font-size:var(--font-sm); }
 
-  /* Wykresy temperatury (hourly + daily), portowane z chart_prototype/daily_alarms.html
-     (2026-07-17) — jedna karta, dwa niezależne wykresy (godzinowy/dobowy), ręczne
-     odświeżanie przyciskiem (bez pollingu, patrz loadCharts()). */
-  .chart-sub-title { color:var(--text-secondary); font-size:var(--font-sm); font-weight:600; text-transform:uppercase; letter-spacing:.05em; margin:16px 0 10px; }
-  .chart-sub-title:first-of-type { margin-top:0; }
-  .legend { display:flex; gap:14px; flex-wrap:wrap; font-size:var(--font-xs); color:var(--text-muted); margin-bottom:10px; }
-  .legend span.dot { display:inline-block; width:11px; height:11px; border-radius:50%; margin-right:5px; vertical-align:middle; }
-  .chart-body { display:flex; align-items:stretch; gap:0; }
-  .chart-nav-btn { flex-shrink:0; width:32px; border:1px solid var(--border); background:var(--bg-input); color:var(--text-secondary); cursor:pointer; font-size:1rem; border-radius:var(--radius-sm); transition:all var(--transition-fast); margin:0; padding:0; }
-  .chart-nav-btn:hover { border-color:var(--accent-cyan); color:var(--text-primary); }
-  .chart-nav-btn:disabled { opacity:.3; cursor:not-allowed; }
-  .chart-nav-btn:disabled:hover { border-color:var(--border); color:var(--text-secondary); }
-  @media (max-width:600px) { .chart-nav-btn { display:none; } }
-  .chart-yaxis { flex-shrink:0; width:42px; position:relative; margin:0 6px 0 0; }
-  .chart-yaxis .tick { position:absolute; left:0; transform:translateY(-50%); font-size:var(--font-xs); color:var(--text-muted); white-space:nowrap; }
-  .chart-yaxis .target-tick { color:var(--accent-blue); font-weight:600; }
-  .chart-scroll { flex:1; min-width:0; overflow-x:auto; overflow-y:hidden; -webkit-overflow-scrolling:touch; touch-action:pan-x; scrollbar-width:thin; scrollbar-color:var(--border) transparent; }
-  .chart-scroll::-webkit-scrollbar { height:6px; }
-  .chart-scroll::-webkit-scrollbar-thumb { background:var(--border); border-radius:3px; }
-  .chart-inner { position:relative; }
-  .plot-svg { display:block; }
-  .chart-labels { display:flex; }
-  .chart-label { display:flex; align-items:flex-start; justify-content:center; flex-shrink:0; }
-  .chart-label span { display:inline-block; transform:rotate(-90deg); white-space:nowrap; font-size:.7rem; color:var(--text-muted); font-family:'Courier New',monospace; margin-top:8px; }
-  .chart-label.now span { color:var(--accent-cyan); font-weight:700; }
-  .now-marker { stroke:var(--accent-cyan); stroke-width:1; stroke-dasharray:3 3; opacity:.6; }
-  .target-marker { stroke:var(--accent-blue); stroke-width:1; stroke-dasharray:5 3; opacity:.55; }
-
-  /* Topbar + lock */
+  /* Topbar */
   .topbar { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
   .topbar-actions { display:flex; align-items:center; gap:8px; }
   .btn-back { background:var(--bg-input); border:1px solid var(--border); color:var(--text-secondary); padding:8px 16px; border-radius:var(--radius-sm); font-size:.875rem; font-weight:500; cursor:pointer; transition:all .2s; }
   .btn-back:hover { background:var(--bg-card); color:var(--text-primary); }
-  .lock-btn { display:inline-flex; align-items:center; gap:5px; background:none; border:1px solid var(--border); border-radius:var(--radius-sm); padding:8px 16px; font-size:var(--font-sm); font-weight:600; cursor:pointer; transition:color var(--transition-fast),border-color var(--transition-fast); }
-  .lock-btn.locked { color:var(--text-muted); }
-  .lock-btn.unlocked { color:var(--accent-green); border-color:var(--accent-green); }
-  .lock-form-bar { display:none; gap:8px; align-items:center; background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-sm); padding:8px 12px; margin-bottom:8px; }
-  .lock-form-bar.visible { display:flex; }
-  @keyframes lock-shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-6px)} 75%{transform:translateX(6px)} }
-  .shake-inp { animation:lock-shake .35s; }
-  .lock-pwd-input { flex:1; height:34px; padding:0 10px; background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); color:var(--text-primary); font-size:var(--font-md); outline:none; min-width:0; }
-  .lock-pwd-input.error { border-color:var(--accent-red); }
-  .lock-pwd-msg { font-size:var(--font-xs); color:var(--accent-red); min-width:100px; }
-  @media (max-width:600px) {
-    .lock-pwd-msg { min-width:20px; }
-  }
-  .lock-close-btn { background:none; border:none; color:var(--text-muted); font-size:18px; cursor:pointer; padding:0 6px; }
-  body.editing-locked .lockable-btn { pointer-events:none; opacity:.45; }
-  body.editing-locked .lockable-btn::before { content:''; display:inline-block; width:11px; height:11px; vertical-align:-1px; margin-right:4px;
-    background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f1f5f9' stroke-width='2.5'%3E%3Crect x='3' y='11' width='18' height='11' rx='2'/%3E%3Cpath d='M7 11V7a5 5 0 0 1 10 0v4'/%3E%3C/svg%3E") no-repeat center/contain; }
 
   /* Modal */
   .modal-overlay { position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,.7); backdrop-filter:blur(4px); display:flex; align-items:center; justify-content:center; z-index:1000; opacity:0; visibility:hidden; transition:all .2s ease; }
@@ -209,19 +108,7 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
   .modal-input { display:block; width:100%; height:40px; padding:0 12px; margin-top:4px; background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); color:var(--text-primary); font-size:var(--font-md); }
   .modal-input:focus { outline:none; border-color:var(--accent-cyan); }
   .modal-actions button { flex:1; margin:0; }
-
-  /* Stepper prędkości wentylatora — wygląda jak jeden przycisk (kolory/wysokość
-     spójne z resztą), podzielony na dwie strefy kliknięcia ze strzałkami */
-  .fan-stepper { display:flex; align-items:stretch; border-radius:var(--radius-sm); border:1px solid var(--border); background:var(--bg-input); overflow:hidden; transition:all var(--transition-fast); }
-  .fan-stepper.active { border-color:var(--service-border); background:var(--service-bg); }
-  .fan-stepper.disabled { opacity:.45; pointer-events:none; }
-  .fan-step-btn { background:none; border:none; color:var(--text-primary); padding:10px 14px; cursor:pointer; font-size:.9rem; margin:0; border-radius:0; }
-  .fan-step-btn:hover { background:rgba(255,255,255,0.08); }
-  .fan-step-btn:disabled { opacity:1; cursor:not-allowed; } /* fade już daje .fan-stepper.disabled na całości, bez podwójnego przyciemnienia */
-  .fan-step-val { flex:1; padding:0 4px; font-size:.9rem; font-weight:600; color:var(--text-primary); min-width:46px; text-align:center; align-self:center; }
-  .fan-stepper.active .fan-step-val, .fan-stepper.active .fan-step-btn { color:var(--service-text); }
   /* ================= RL90 Lamp — dodatki do wzorca termostatu ================= */
-  :root { --ch-a:#ffff66; --ch-b:#cc33ff; --ch-c:#0066ff; --ch-d:#00ffcc; }
   /* Prawa część .status-main: kolumna wierszy label (ramka jak .badge, tło przezroczyste) + wartość, wyrównane do dołu */
   /* Grid 2 kolumn: wartości zaczynają się w jednej linii (szerokość kolumny = najdłuższy label) */
   .ctl-list { display:grid; grid-template-columns:auto 1fr; align-items:end; justify-items:start; gap:10px; font-size:var(--font-md); color:var(--text-primary); }
