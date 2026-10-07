@@ -67,38 +67,34 @@ If the port does not show up (e.g. firmware stuck in a boot loop), hold BOOT whi
 ### Wi-Fi (OTA upload)
 
 ```bash
-pio run -e seeed_xiao_esp32c3_ota -t upload
+pio run -e seeed_xiao_esp32c3_ota -t upload                              # lamp 192.168.10.5 (default)
+pio run -e seeed_xiao_esp32c3_ota -t upload --upload-port 192.168.10.6   # lamp 192.168.10.6
 
 # without ~/.secrets/iot.env — the variable must be in the SAME command as pio
 OTA_PASSWORD_192_168_10_5='your-password' pio run -e seeed_xiao_esp32c3_ota -t upload
-
-# different IP than in platformio.ini
-pio run -e seeed_xiao_esp32c3_ota -t upload --upload-port 192.168.10.x
 ```
+
+The password variable follows the target IP: `--upload-port 192.168.10.6` reads `OTA_PASSWORD_192_168_10_6`
+(`scripts/ota_secret.py`). That password is both baked into the uploaded firmware and sent as `--auth`, so each
+lamp needs its own entry in `~/.secrets/iot.env` (the same value is fine). A USB build uses
+`custom_ota_password_var` (`OTA_PASSWORD_192_168_10_5`).
 
 The device listens on UDP 3232; after authentication it opens a TCP connection back to the computer on a fixed
 port 8266 (`--host_port`). The lamp sits in the isolated IoT VLAN (192.168.10.0/24), the computer in the
 LAN (192.168.2.10), and the router blocks IoT → LAN. Without an exception espota prints
 `Authenticating...OK` followed by `No response from device`.
 
-One-time MikroTik rule, disabled by default, placed before the rule that blocks IoT → LAN:
+Permanent MikroTik exception placed before the rule that blocks IoT → LAN (only IoT devices → this computer,
+port 8266, where something listens only during an upload):
 
 ```
 /ip firewall filter add chain=forward action=accept protocol=tcp \
-    src-address=192.168.10.5 dst-address=192.168.2.10 dst-port=8266 \
-    comment="OTA-lamp-temp" disabled=yes place-before=<number of the IoT→LAN drop rule>
-```
-
-Every OTA upload:
-
-```
-/ip firewall filter enable [find comment="OTA-lamp-temp"]      # MikroTik
-pio run -e seeed_xiao_esp32c3_ota -t upload                    # computer
-/ip firewall filter disable [find comment="OTA-lamp-temp"]     # MikroTik
+    src-address=192.168.10.2-192.168.10.10 dst-address=192.168.2.10 dst-port=8266 \
+    comment="OTA-lamp" place-before=[find comment="Block IOT to HOME"]
 ```
 
 `Authentication Failed` instead means the password baked into the running firmware differs from
-`OTA_PASSWORD_192_168_10_5` — reflash once over USB with the variable set.
+the `OTA_PASSWORD_…` variable of that IP — reflash once over USB with the variable set.
 
 After a successful upload the lamp restarts itself with channels A–D held LOW (no full-brightness flash).
 

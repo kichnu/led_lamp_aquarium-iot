@@ -14,6 +14,14 @@ import os
 Import("env")
 
 var = env.GetProjectOption("custom_ota_password_var")
+
+# OTA: zmienna wg IP docelowego — `--upload-port 192.168.10.6` → OTA_PASSWORD_192_168_10_6,
+# więc wybór lampy = wybór hasła (wgrywanego i do --auth). USB: custom_ota_password_var.
+if env.subst("$UPLOAD_PROTOCOL") == "espota":
+    port = env.subst("$UPLOAD_PORT")
+    if port:
+        var = "OTA_PASSWORD_" + port.replace(".", "_")
+
 password = os.environ.get(var, "")
 uploading = any(t in COMMAND_LINE_TARGETS for t in ("upload", "uploadfs"))
 
