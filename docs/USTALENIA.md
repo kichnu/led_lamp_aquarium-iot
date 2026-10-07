@@ -126,7 +126,8 @@ Brak — wszystkie punkty blokujące szkielet są ustalone.
   diodami, strona kalibracji w GUI i opcja INA226 (bocznik 10 mΩ): `POWER_CALIBRATION.md`. Dotychczasowe prądy
   z pomiarów zgrubne; zasilacz nie ograniczał prądu.
 - Blokada PIN edycji GUI (jak w termostacie) — czy potrzebna; slot w FRAM zarezerwowany.
-- Szczegóły synchronizacji ESP-NOW (§9.4) — kolejny etap.
+- Szczegóły synchronizacji ESP-NOW (§9.4) — kolejny etap; plan i pytania otwarte (klucz grupy, kanał/AP,
+  „ustaw na wszystkich”): `ESPNOW_PLAN.md`.
 - Sprzęt: zakup FRAM; pomiary #3–#9 (mapowanie A/B/D → G/W/M, prądy, 62 vs 90 W, próg PWM, wentylator, test
   termiczny); #2 (R_pu) już opcjonalny; weryfikacja przetwornicy; prąd wsteczny 5V↔USB w XIAO C3.
 - Piny FAN, I2C, DS18B20, przycisk, `gpio_hold` — nietestowane; testy już tylko na finalnym sprzęcie i kodzie
