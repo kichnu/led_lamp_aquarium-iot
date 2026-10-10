@@ -24,6 +24,7 @@ static bool batteryIssue = false;
 static volatile bool ntpSyncPending = false;
 static unsigned long lastNtpSyncMs = 0;
 static bool ntpEverSynced = false;
+static bool peerTimeSet = false;
 
 static void onNtpSync(struct timeval* tv) {
     ntpSyncPending = true;   // callback w tasku lwIP — zapis do DS3231 w loop()
@@ -108,13 +109,35 @@ String getCurrentTimestamp() {
 }
 
 String getRTCInfo() {
-    if (!rtcPresent) return isTimeValid() ? "NTP (brak DS3231)" : "brak czasu";
+    if (!rtcPresent) {
+        if (!isTimeValid()) return "brak czasu";
+        return (peerTimeSet && !ntpEverSynced) ? "lamp (brak DS3231)" : "NTP (brak DS3231)";
+    }
     if (batteryIssue) return "DS3231 (bateria? czeka na NTP)";
     if (!rtcTimeOk) return "DS3231 (nieprawidłowy czas)";
-    return ntpEverSynced ? "DS3231 + NTP" : "DS3231";
+    if (ntpEverSynced) return "DS3231 + NTP";
+    return peerTimeSet ? "DS3231 + lamp" : "DS3231";
 }
 
 uint32_t getLastNtpSyncAgeS() {
     if (!ntpEverSynced) return UINT32_MAX;
     return (millis() - lastNtpSyncMs) / 1000UL;
+}
+
+uint8_t getTimeQuality() {
+    if (getLastNtpSyncAgeS() < 7200) return 2;
+    return isTimeValid() ? 1 : 0;
+}
+
+void setTimeFromPeer(uint32_t utc) {
+    struct timeval tv = { (time_t)utc, 0 };
+    settimeofday(&tv, nullptr);
+    peerTimeSet = true;
+    if (rtcPresent) {
+        LampLock lock;
+        rtc.adjust(DateTime(utc));
+        rtcTimeOk = true;
+        batteryIssue = false;
+    }
+    LOG_INFO("Czas z innej lampy: %s", getCurrentTimestamp().c_str());
 }

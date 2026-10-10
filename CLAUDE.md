@@ -9,7 +9,8 @@ replaced by a **Seeed XIAO ESP32-C3** (PlatformIO, Arduino framework). 4 PWM LED
 drivers) + PWM fan, DS3231 RTC, I2C FRAM 32 KB, a per-channel daily light curve ("program") executed locally,
 web GUI with a curve editor, later ESP-NOW sync between 2–3 lamps.
 
-**Status: stage 1 implemented, not yet tested on hardware** (backend, GUI with editor, OTA). ESP-NOW = stage 2.
+**Status: stage 1 implemented, not yet tested on hardware** (backend, GUI with editor, OTA). Stage 2 (ESP-NOW sync)
+implemented 2026-10-10, works on both lamps.
 
 ## Repository Layout
 
@@ -32,6 +33,7 @@ src/                              lamp firmware (XIAO ESP32-C3)
                                   pwm_output (LEDC 500 Hz/14 bit, gpio_hold restart), hardware_pins.h
   web/                            web_handlers (lamp API), html_pages (GUI: thermostat CSS + editor port)
   core/lamp_lock                  recursive mutex: AsyncTCP handlers vs loop() (FRAM/I2C + lamp state)
+  network/espnow_sync             ESP-NOW: heartbeat, catalog sync, program transfer, peer time, "set on all"
   provisioning/, security/, crypto/, config/, network/   reused from thermo_control-iot
 ```
 

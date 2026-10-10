@@ -11,7 +11,9 @@
 
 struct CatalogEntry {
     uint64_t id;
+    uint64_t parent_id;
     uint32_t created_ts;
+    uint32_t payload_crc;
     uint8_t  slot;
     uint8_t  flags;
     char     name[PROGRAM_NAME_LEN];
@@ -52,5 +54,31 @@ bool validateCurve(const ChannelCurve& c);
 float evalCurve(const ChannelCurve& c, float minuteOfDay);
 
 const char* programErrorStr(ProgramError e);
+
+// ===============================
+// Synchronizacja ESP-NOW (network/espnow_sync)
+// ===============================
+
+// Program osierocony: aktywny, ale skasowany na innej lampie (tombstone). Zostaje w slocie
+// do przełączenia na inny program — restart dobowy nie zmienia programu.
+bool activeIsOrphan();
+
+// Id programów w bibliotece bez osieroconego (to, co lampa udostępnia innym)
+uint8_t  liveProgramIds(uint64_t* out, uint8_t max);
+// CRC32 posortowanych liveProgramIds() — skrót katalogu w heartbeacie
+uint32_t catalogHash();
+
+#define PROGRAM_BLOB_MAX 1024   // nagłówek 64 B + payload ≤ 772 B
+// Surowy program do transferu: nagłówek slotu (z magic) + payload
+bool readProgramBlob(uint64_t id, uint8_t* buf, uint16_t& len);
+// Program z innej lampy: weryfikacja (magic, wersja, oba CRC, krzywe) i zapis do wolnego
+// slotu z zachowaniem id, parent_id, created_ts, nazwy i seq. Już obecny → PROG_OK.
+ProgramError importProgramBlob(const uint8_t* buf, uint16_t len);
+// Tombstone z innej lampy: kasuje program z biblioteki, aktywny zostaje jako osierocony.
+// Zwraca true, gdy coś się zmieniło.
+bool applyRemoteTombstone(uint64_t id);
+// Osierocony aktywny po zmianie nazwy na innej lampie: jeśli w bibliotece jest program
+// z parent_id = aktywny i tym samym payloadem — przełączenie bez rampy (krzywe te same).
+bool adoptRenamedOrphan();
 
 #endif

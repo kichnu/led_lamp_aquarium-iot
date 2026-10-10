@@ -1,6 +1,6 @@
 # RL90 — ustalone i do ustalenia przed kodowaniem
 
-Stan na 2026-10-10. Etap 1 zaimplementowany w `src/` (build OK), nietestowany na sprzęcie. Zbiorczy przegląd; szczegóły i uzasadnienia w `RL90_HANDOFF.md` (sekcje w nawiasach)
+Stan na 2026-10-10. Etap 1 zaimplementowany w `src/` (build OK), nietestowany na sprzęcie. Etap 2 (ESP-NOW) zaimplementowany 2026-10-10, działa na obu lampach (wykrywanie, „ustaw na wszystkich”, kasowanie). Zbiorczy przegląd; szczegóły i uzasadnienia w `RL90_HANDOFF.md` (sekcje w nawiasach)
 i `CURVE_EDITOR_IMPLEMENTATION.md`.
 
 ---
@@ -165,3 +165,32 @@ Brak — wszystkie punkty blokujące szkielet są ustalone.
   - WiFi łączy się w tle (termostat blokował `setup()` do 25 s — lampa byłaby ciemna);
   - blokada PIN usunięta z provisioningu (decyzja „czy potrzebna” wciąż otwarta);
   - GUI po angielsku jak w termostacie; preset nocny domyślnie 0,5 % na kanał.
+
+## Etap 2 — ESP-NOW (2026-10-10)
+
+- Moduł `src/network/espnow_sync`, zmiany w `program_store` (import, tombstone z innej lampy, program osierocony),
+  `rtc_controller` (czas od innej lampy), API `GET /api/group`, `POST /api/program-activate-all`, karta „Lamps” w GUI.
+- Decyzje implementacyjne podjęte bez pytania (do weryfikacji):
+  - ramki ≤ 250 B (ESP-NOW v1), HMAC-SHA256 skrócony do 16 B; przeciw powtórkom `boot_id` (losowy przy starcie)
+    + licznik. Ograniczenie: ramkę z poprzedniego uruchomienia innej lampy da się powtórzyć (zmiana `boot_id`
+    jest akceptowana) — przy lampie akwariowej w domu do przyjęcia;
+  - heartbeat broadcastem co 15 s i zaraz po zmianie katalogu/aktywnego; lampa offline po 45 s, zapominana po 1 h;
+    wysyłanie tylko przy połączonym Wi-Fi (kanał AP); modem sleep wyłączony (`WiFi.setSleep(false)`);
+  - skrót katalogu = CRC32 posortowanych id programów (bez tombstone). Tombstone idą razem z listą id przy
+    wymianie list, więc rozjazd ringów tombstone między lampami nie powoduje ciągłej wymiany;
+  - transfer: porcje 192 B, stop-and-wait, timeout 400 ms, 5 ponowień; po przerwaniu program zostanie pobrany
+    przy następnej wymianie list. Pełna biblioteka (24) → program pominięty (log);
+  - program aktywny skasowany na innej lampie = osierocony: zostaje w slocie (przeżywa restart dobowy), slot
+    zwalniany dopiero po aktywacji innego programu. Zmiana nazwy na innej lampie programu aktywnego tutaj →
+    lampa sama przechodzi na kopię (`parent_id` + ten sam payload), bez rampy;
+  - kasowanie programu aktywnego na lampie online blokowane (409, ✕ wyłączony w GUI); lampa offline po powrocie
+    dostaje program osierocony;
+  - czas: korekta tylko od lampy z NTP w ostatnich 2 h, gdy własny NTP starszy; próg 2 s, najwyżej raz na
+    10 min (bez czasu — od razu). Czas od innej lampy nie liczy się jako NTP (brak łańcucha lampa → lampa);
+  - `programs_created` = max(własny, cudzy) z heartbeatu;
+  - GUI: Activate przy lampach online pyta „This lamp / All lamps”; przycisk „Apply active program to all
+    lamps”, gdy któraś lampa online ma inny aktywny; karta „Lamps” odświeżana co 5 s.
+- GUI po teście (2026-10-10): nagłówek (`.logo`) = Device Name z provisioningu (`getDeviceID()`); w karcie
+  „Lamps” nazwa tej lampy podkreślona, stan drugiej lampy jako ikona na lewym skraju (zielony ✓ = zsynchronizowana,
+  czerwony ! = synchronizacja / offline), IP, czas, FW w podpowiedzi. Lista programów przeładowywana po zmianie
+  aktywnego w `/api/status` i po zmianie własnego skrótu katalogu w `/api/group`.

@@ -7,6 +7,7 @@
 #include "hardware/fram_controller.h"
 #include "hardware/rtc_controller.h"
 #include "network/wifi_manager.h"
+#include "network/espnow_sync.h"
 #include "lamp/lamp_storage.h"
 #include "lamp/program_store.h"
 #include "lamp/light_engine.h"
@@ -126,6 +127,7 @@ static void handleStatus(AsyncWebServerRequest* request) {
         const Program& p = activeProgram();
         doc["active_id"]   = idToHex(p.id);
         doc["active_name"] = p.name;
+        doc["active_orphan"] = activeIsOrphan();
         const SystemState& ss = sysState();
         doc["reset_reason"] = resetReasonStr(ss.last_reset_reason);
         JsonObject rc = doc["resets"].to<JsonObject>();
@@ -171,7 +173,12 @@ static void handlePrograms(AsyncWebServerRequest* request) {
         o["created"] = e->created_ts;
         o["factory"] = (e->flags & PROGRAM_FLAG_FACTORY) != 0;
         o["active"]  = e->id == activeId;
+        o["orphan"]  = isTombstoned(e->id);       // aktywny skasowany na innej lampie
         if (e->id == activeId) activeInLibrary = true;
+        JsonArray on = o["active_on"].to<JsonArray>();   // lampy online z tym programem aktywnym
+        PeerInfo pi;
+        for (uint8_t k = 0; espnowPeer(k, pi); k++)
+            if (pi.online && pi.active_id == e->id) on.add(pi.name);
     }
     doc["active_in_library"] = activeInLibrary;   // false: program fabryczny tylko w RAM (brak FRAM)
     sendJson(request, doc);
@@ -267,6 +274,20 @@ static void handleActivateProgram(AsyncWebServerRequest* request) {
     sendOk(request);
 }
 
+static void handleActivateAll(AsyncWebServerRequest* request) {
+    uint64_t id;
+    if (!idParam(request, id)) { sendError(request, 400, "missing id"); return; }
+    if (activeProgram().id != id) {
+        ProgramError e = activateProgram(id);
+        if (e != PROG_OK) { sendError(request, e == PROG_ERR_NOT_FOUND ? 404 : 500, programErrorStr(e)); return; }
+        onActiveProgramChanged();
+    }
+    JsonDocument doc;
+    doc["success"] = true;
+    doc["lamps"] = espnowActivateAll(id);   // pozostałe lampy online; brakujący program dociągną same
+    sendJson(request, doc);
+}
+
 static void handleRenameProgram(AsyncWebServerRequest* request) {
     uint64_t id;
     if (!idParam(request, id)) { sendError(request, 400, "missing id"); return; }
@@ -287,6 +308,13 @@ static void handleRenameProgram(AsyncWebServerRequest* request) {
 static void handleDeleteProgram(AsyncWebServerRequest* request) {
     uint64_t id;
     if (!idParam(request, id)) { sendError(request, 400, "missing id"); return; }
+    char peer[32];
+    if (espnowActiveOnPeer(id, peer, sizeof(peer))) {
+        char msg[64];
+        snprintf(msg, sizeof(msg), "program active on %s", peer);
+        sendError(request, 409, msg);
+        return;
+    }
     ProgramError e = deleteProgram(id);
     if (e != PROG_OK) {
         sendError(request, e == PROG_ERR_NOT_FOUND ? 404 : ((e == PROG_ERR_ACTIVE || e == PROG_ERR_FACTORY) ? 409 : 500), programErrorStr(e));
@@ -335,6 +363,54 @@ static void handleManualSet(AsyncWebServerRequest* request) {
 static void handleManualExit(AsyncWebServerRequest* request) {
     exitManualMode();
     sendOk(request);
+}
+
+// ===============================
+// Grupa lamp (ESP-NOW)
+// ===============================
+
+static String macStr(const uint8_t* m) {
+    char buf[18];
+    snprintf(buf, sizeof(buf), "%02X:%02X:%02X:%02X:%02X:%02X", m[0], m[1], m[2], m[3], m[4], m[5]);
+    return String(buf);
+}
+
+static void handleGroup(AsyncWebServerRequest* request) {
+    EspNowStatus es;
+    espnowStatus(es);
+    JsonDocument doc;
+    JsonObject self = doc["self"].to<JsonObject>();
+    self["name"]    = getDeviceID();
+    self["mac"]     = macStr(es.mac);
+    self["channel"] = es.channel;
+    self["catalog"] = es.catalog_hash;
+    self["enabled"] = es.enabled;
+    self["fetch_queue"] = es.fetch_queue;
+    if (es.fetching_id) self["fetching"] = idToHex(es.fetching_id); else self["fetching"] = nullptr;
+    if (es.pending_activate) self["pending_activate"] = idToHex(es.pending_activate); else self["pending_activate"] = nullptr;
+    self["rx_ok"]   = es.rx_ok;
+    self["rx_bad"]  = es.rx_bad;
+    self["tx_fail"] = es.tx_fail;
+
+    JsonArray arr = doc["lamps"].to<JsonArray>();
+    PeerInfo p;
+    for (uint8_t i = 0; espnowPeer(i, p); i++) {
+        JsonObject o = arr.add<JsonObject>();
+        o["name"]        = p.name;
+        o["mac"]         = macStr(p.mac);
+        o["ip"]          = IPAddress(p.ip).toString();
+        o["online"]      = p.online;
+        o["last_seen_s"] = p.last_seen_s;
+        o["active_id"]   = idToHex(p.active_id);
+        o["active_name"] = p.active_name;
+        o["active_orphan"] = p.active_orphan;
+        o["mode"]        = lampModeStr((LampMode)p.mode);
+        o["time_q"]      = p.time_quality;
+        o["in_sync"]     = p.in_sync;
+        o["programs"]    = p.prog_count;
+        o["fw"]          = p.fw;
+    }
+    sendJson(request, doc);
 }
 
 // ===============================
@@ -432,6 +508,8 @@ void registerLampHandlers(AsyncWebServer& server) {
     server.on("/api/program",          HTTP_GET,  requireAuth(handleGetProgram));
     server.on("/api/program-save",     HTTP_POST, requireAuth(handleSaveProgram));
     server.on("/api/program-activate", HTTP_POST, requireAuth(handleActivateProgram));
+    server.on("/api/program-activate-all", HTTP_POST, requireAuth(handleActivateAll));
+    server.on("/api/group",            HTTP_GET,  requireAuth(handleGroup));
     server.on("/api/program-delete",   HTTP_POST, requireAuth(handleDeleteProgram));
     server.on("/api/program-rename",   HTTP_POST, requireAuth(handleRenameProgram));
     server.on("/api/manual-enter",     HTTP_POST, requireAuth(handleManualEnter));

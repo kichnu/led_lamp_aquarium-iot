@@ -14,6 +14,7 @@
 #include "lamp/program_store.h"
 #include "lamp/light_engine.h"
 #include "network/wifi_manager.h"
+#include "network/espnow_sync.h"
 #include "security/auth_manager.h"
 #include "security/session_manager.h"
 #include "security/rate_limiter.h"
@@ -75,6 +76,7 @@ void setup() {
     LOG_INFO("Device ID: %s", credentials_loaded ? getDeviceID() : "FALLBACK");
 
     initWiFi();                 // bez blokowania, połączenie w tle
+    initEspNow();               // po WiFi.mode(STA); wysyłanie dopiero po połączeniu (kanał AP)
     startNTP();
 
     ArduinoOTA.setPassword(OTA_PASSWORD);
@@ -124,6 +126,8 @@ void loop() {
         lastEngine = now;
         updateLightEngine();    // w tym restart dobowy 00:00–01:00
     }
+
+    updateEspNow();             // co obieg — odbiór z kolejki, heartbeat, transfery
 
     static unsigned long lastTick = 0;
     if (now - lastTick >= 100) {

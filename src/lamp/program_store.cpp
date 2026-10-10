@@ -163,7 +163,9 @@ static bool writeSlot(uint8_t slot, const Program& p) {
 static void addToCatalog(uint8_t slot, const ProgramHeader& h) {
     CatalogEntry& e = s_catalog[s_count++];
     e.id = h.program_id;
+    e.parent_id = h.parent_id;
     e.created_ts = h.created_ts;
+    e.payload_crc = h.payload_crc32;
     e.slot = slot;
     e.flags = h.flags;
     memcpy(e.name, h.name, PROGRAM_NAME_LEN);
@@ -176,7 +178,8 @@ static void scanSlots() {
     for (uint8_t slot = 0; slot < FRAM_PROGRAM_SLOTS; slot++) {
         ProgramHeader h;
         if (!readHeader(slot, h)) continue;
-        if (isTombstoned(h.program_id) || findProgram(h.program_id)) {
+        bool orphan = h.program_id == sysState().active_program_id;   // aktywny skasowany na innej lampie
+        if ((isTombstoned(h.program_id) && !orphan) || findProgram(h.program_id)) {
             // Skasowany (tombstone) albo duplikat id — zwalniamy slot
             uint32_t zero = 0;
             framWrite(slotAddr(slot), &zero, 4);
@@ -278,14 +281,28 @@ bool loadProgram(uint64_t id, Program& out) {
     return readSlot(e->slot, out);
 }
 
+// Slot osieroconego programu (tombstone już jest) — zwalniany, gdy przestaje być aktywny
+static void freeOrphanSlot(uint64_t id) {
+    for (uint8_t i = 0; i < s_count; i++) {
+        if (s_catalog[i].id != id) continue;
+        uint32_t zero = 0;
+        framWrite(slotAddr(s_catalog[i].slot), &zero, 4);
+        s_catalog[i] = s_catalog[--s_count];
+        LOG_INFO("Zwolniono slot programu osieroconego");
+        return;
+    }
+}
+
 ProgramError activateProgram(uint64_t id) {
     LampLock lock;
     Program p;
-    if (!findProgram(id)) return PROG_ERR_NOT_FOUND;
+    if (!findProgram(id) || (isTombstoned(id) && id != s_active.id)) return PROG_ERR_NOT_FOUND;
     if (!loadProgram(id, p)) return PROG_ERR_STORAGE;
+    uint64_t oldId = s_active.id;
     s_active = p;
     sysState().active_program_id = id;
     saveSystemState();
+    if (oldId != id && isTombstoned(oldId)) freeOrphanSlot(oldId);
     LOG_INFO("Aktywowano program: %s", s_active.name);
     return PROG_OK;
 }
@@ -396,4 +413,114 @@ const char* programErrorStr(ProgramError e) {
         case PROG_ERR_STORAGE:   return "FRAM error";
     }
     return "error";
+}
+
+// ===============================
+// Synchronizacja ESP-NOW
+// ===============================
+
+bool activeIsOrphan() {
+    LampLock lock;
+    return isTombstoned(s_active.id);
+}
+
+uint8_t liveProgramIds(uint64_t* out, uint8_t max) {
+    LampLock lock;
+    uint8_t n = 0;
+    for (uint8_t i = 0; i < s_count && n < max; i++)
+        if (!isTombstoned(s_catalog[i].id)) out[n++] = s_catalog[i].id;
+    return n;
+}
+
+uint32_t catalogHash() {
+    uint64_t ids[FRAM_PROGRAM_SLOTS];
+    uint8_t n = liveProgramIds(ids, FRAM_PROGRAM_SLOTS);
+    for (uint8_t i = 1; i < n; i++) {           // insertion sort, n ≤ 24
+        uint64_t v = ids[i];
+        int j = i - 1;
+        while (j >= 0 && ids[j] > v) { ids[j + 1] = ids[j]; j--; }
+        ids[j + 1] = v;
+    }
+    return crc32Calc(ids, n * sizeof(uint64_t));
+}
+
+bool readProgramBlob(uint64_t id, uint8_t* buf, uint16_t& len) {
+    LampLock lock;
+    const CatalogEntry* e = findProgram(id);
+    if (!e || isTombstoned(id)) return false;
+    ProgramHeader h;
+    if (!readHeader(e->slot, h)) return false;
+    len = sizeof(h) + h.payload_len;
+    if (!framRead(slotAddr(e->slot), buf, len)) return false;
+    return crc32Calc(buf + sizeof(h), h.payload_len) == h.payload_crc32;
+}
+
+ProgramError importProgramBlob(const uint8_t* buf, uint16_t len) {
+    LampLock lock;
+    ProgramHeader h;
+    if (len < sizeof(h)) return PROG_ERR_INVALID;
+    memcpy(&h, buf, sizeof(h));
+    if (h.magic != PROGRAM_MAGIC || h.format_version != PROGRAM_FORMAT_VERSION ||
+        h.header_crc32 != headerCrc(h) || h.payload_len > PAYLOAD_MAX || len != sizeof(h) + h.payload_len ||
+        crc32Calc(buf + sizeof(h), h.payload_len) != h.payload_crc32) {
+        return PROG_ERR_INVALID;
+    }
+    if (findProgram(h.program_id)) return PROG_OK;
+    if (h.program_id == 0 || isTombstoned(h.program_id)) return PROG_ERR_INVALID;
+    if (!isFramInitialized()) return PROG_ERR_STORAGE;
+
+    static Program p;   // static: ~830 B poza stosem (pod LampLock)
+    memset(&p, 0, sizeof(p));
+    if (!unpackPayload(buf + sizeof(h), h.payload_len, p)) return PROG_ERR_INVALID;
+    p.id = h.program_id;
+    p.parent_id = h.parent_id;
+    p.created_ts = h.created_ts;
+    p.flags = (h.program_id == FACTORY_PROGRAM_ID) ? PROGRAM_FLAG_FACTORY : 0;
+    p.seq = h.seq;
+    memcpy(p.name, h.name, PROGRAM_NAME_LEN);
+    p.name[PROGRAM_NAME_LEN - 1] = '\0';
+
+    int slot = freeSlot();
+    if (slot < 0) return PROG_ERR_FULL;
+    if (!writeSlot(slot, p)) return PROG_ERR_STORAGE;
+    ProgramHeader nh;
+    readHeader(slot, nh);
+    addToCatalog(slot, nh);
+    LOG_INFO("Odebrano program: %s (slot %d)", p.name, slot);
+    return PROG_OK;
+}
+
+bool applyRemoteTombstone(uint64_t id) {
+    LampLock lock;
+    if (id == 0 || id == FACTORY_PROGRAM_ID || isTombstoned(id)) return false;
+    if (findProgram(id) && id == s_active.id) {
+        addTombstone(id);
+        LOG_WARNING("Aktywny program %s skasowany na innej lampie — osierocony", s_active.name);
+        return true;
+    }
+    if (removeFromLibrary(id) == PROG_OK) return true;   // dopisuje też tombstone
+    addTombstone(id);
+    return true;
+}
+
+bool adoptRenamedOrphan() {
+    LampLock lock;
+    if (!isTombstoned(s_active.id)) return false;
+    uint8_t buf[PAYLOAD_MAX];
+    uint32_t crc = crc32Calc(buf, packPayload(s_active, buf));
+    for (uint8_t i = 0; i < s_count; i++) {
+        const CatalogEntry& e = s_catalog[i];
+        if (e.parent_id != s_active.id || e.payload_crc != crc || isTombstoned(e.id)) continue;
+        uint64_t oldId = s_active.id;
+        s_active.id = e.id;
+        s_active.parent_id = e.parent_id;
+        s_active.created_ts = e.created_ts;
+        memcpy(s_active.name, e.name, PROGRAM_NAME_LEN);
+        sysState().active_program_id = e.id;
+        saveSystemState();
+        freeOrphanSlot(oldId);
+        LOG_INFO("Program aktywny przemianowany na innej lampie — teraz: %s", s_active.name);
+        return true;
+    }
+    return false;
 }

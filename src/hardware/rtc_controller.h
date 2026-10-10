@@ -23,4 +23,9 @@ String getCurrentTimestamp();       // lokalny "YYYY-MM-DD HH:MM:SS"
 String getRTCInfo();
 uint32_t getLastNtpSyncAgeS();      // UINT32_MAX = nigdy
 
+// Jakość czasu do heartbeatu ESP-NOW: 2 = NTP w ostatnich 2 h, 1 = RTC/inna lampa, 0 = brak
+uint8_t getTimeQuality();
+// Czas (UTC) od lampy ze świeżym NTP — zegar systemowy + DS3231
+void setTimeFromPeer(uint32_t utc);
+
 #endif

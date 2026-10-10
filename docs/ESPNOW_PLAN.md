@@ -1,6 +1,7 @@
 # ESP-NOW — plan etapu 2 (kopiowanie programów między lampami)
 
-Stan: plan, nic nie zaimplementowane. Podstawa: `RL90_HANDOFF.md` §9.3–9.4. W projektach w
+Stan: zaimplementowane 2026-10-10 (`src/network/espnow_sync`), działa na obu lampach — szczegóły
+implementacji i decyzje podjęte przy kodzie: `USTALENIA.md` „Etap 2”. Poniżej plan wyjściowy. Podstawa: `RL90_HANDOFF.md` §9.3–9.4. W projektach w
 `~/Dokumenty/My_apps/IOT/` ani w `~/dev-knowledge/` nie ma kodu ESP-NOW — moduł powstaje od zera.
 
 ## Identyfikacja lamp

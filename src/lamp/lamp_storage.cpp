@@ -178,6 +178,10 @@ bool isTombstoned(uint64_t id) {
     return false;
 }
 
+uint16_t tombstoneCount() { return s_tombMeta.count; }
+
+uint64_t tombstoneAt(uint16_t i) { return i < s_tombMeta.count ? s_tombIds[i] : 0; }
+
 bool addTombstone(uint64_t id) {
     if (id == FACTORY_PROGRAM_ID) return false;
     if (isTombstoned(id)) return true;

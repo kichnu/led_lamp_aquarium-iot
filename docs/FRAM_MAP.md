@@ -143,7 +143,8 @@ Zapis (zgodnie z §9.4):
 3. Odczyt kontrolny (CRC payloadu i nagłówka).
 4. Zapis `magic` (4 B), dopiero teraz program jest zatwierdzony.
 
-Kasowanie: `magic = 0` + dopisanie id do TOMBSTONES. Zanik zasilania w dowolnym momencie zostawia slot
+Kasowanie: `magic = 0` + dopisanie id do TOMBSTONES. Wyjątek (ESP-NOW, 2026-10-10): tombstone z innej lampy dla
+programu aktywnego tutaj nie zwalnia slotu — program osierocony zostaje (także po restarcie) do aktywacji innego. Zanik zasilania w dowolnym momencie zostawia slot
 niezatwierdzony (niewidoczny, wolny do nadpisania) albo w pełni poprawny.
 
 Odczyt przy starcie: slot jest ważny, gdy `magic` się zgadza, `format_version` jest znana i oba CRC się

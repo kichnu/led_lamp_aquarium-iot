@@ -173,6 +173,14 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
     .prog-ctrl > .badge { padding-top:6px; padding-bottom:6px; }
   }
   .prog-meta { font-size:var(--font-xs); color:var(--text-muted); margin-top:8px; }
+  /* Karta Lamps (ESP-NOW): wiersze jak lista programów, bez klikania */
+  .lamp-row { cursor:default; }
+  .lamp-self { text-decoration:underline; text-underline-offset:3px; }
+  /* Status synchronizacji drugiej lampy: zielony ✓ / czerwony ! na lewym skraju (stała szerokość — nazwy w jednej linii) */
+  .lamp-sync { display:inline-block; width:18px; margin-right:6px; text-align:center; font-weight:700; }
+  .lamp-sync.ok  { color:var(--accent-green); }
+  .lamp-sync.bad { color:var(--accent-red); }
+  .lamp-prog { font-size:var(--font-xs); color:var(--text-secondary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:180px; }
 
   /* Edytor — port docs/curve_editor_linear.html (krzyż 3×3, karetka, wykres) */
   #edCanvas { display:block; width:100%; height:240px; touch-action:manipulation; background:var(--bg-primary); border:1px solid var(--border); border-radius:var(--radius-sm); }
@@ -201,7 +209,7 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
     <div class="logo-icon">
       <svg viewBox="0 0 24 24"><path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z"/></svg>
     </div>
-    <h1>REEF Lamp</h1>
+    <h1 id="logoName">REEF Lamp</h1>
   </div>
   <div class="topbar-actions">
     <button class="btn-back" id="btnLogout">Back</button>
@@ -277,6 +285,21 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
   </div>
 </div>
 
+<!-- LAMPS: grupa z heartbeatów ESP-NOW -->
+<div class="card" id="groupCard">
+  <div class="card-header">
+    <div class="card-header-icon" style="background:rgba(34,211,213,0.15);">
+      <svg fill="none" stroke="currentColor" stroke-width="2" style="color:var(--accent-cyan);" viewBox="0 0 24 24"><circle cx="5" cy="12" r="2"/><circle cx="19" cy="6" r="2"/><circle cx="19" cy="18" r="2"/><line x1="7" y1="11" x2="17" y2="7"/><line x1="7" y1="13" x2="17" y2="17"/></svg>
+    </div>
+    <h2>Lamps</h2>
+  </div>
+  <div class="prog-list" id="groupList"></div>
+  <div class="btn-row" style="margin-top:10px;">
+    <button class="primary" id="btnAllActive" style="display:none;">Apply active program to all lamps</button>
+  </div>
+  <div class="prog-meta" id="groupMeta"></div>
+</div>
+
 <button id="settingsBtn" class="settings-toggle-btn">⚙ Settings</button>
 
 <div class="card" id="settingsPanel" style="display:none;">
@@ -338,6 +361,25 @@ function showConfirm(title, msg, type, onConfirm) {
   document.getElementById('alertActions').innerHTML =
     '<button onclick="closeAlert()">Cancel</button><button class="primary" onclick="closeAlert(true)">Confirm</button>';
   alertCallback = onConfirm;
+  document.getElementById('alertModal').classList.add('show');
+}
+// Okienko z kilkoma przyciskami: buttons = [{label, cls, fn}], Cancel dokładany na początku
+function showChoice(title, msg, type, buttons) {
+  clearTimeout(alertAutoHideTimer);
+  document.getElementById('alertIcon').className = 'modal-icon ' + type;
+  document.getElementById('alertIcon').innerHTML = MODAL_ICONS[type] || MODAL_ICONS.info;
+  document.getElementById('alertTitle').textContent = title;
+  document.getElementById('alertText').textContent = msg;
+  const act = document.getElementById('alertActions');
+  act.innerHTML = '<button onclick="closeAlert()">Cancel</button>';
+  buttons.forEach(b => {
+    const el = document.createElement('button');
+    el.textContent = b.label;
+    if (b.cls) el.className = b.cls;
+    el.onclick = () => { closeAlert(); b.fn(); };
+    act.appendChild(el);
+  });
+  alertCallback = null;
   document.getElementById('alertModal').classList.add('show');
 }
 // Okienko z polem tekstowym (zmiana nazwy); onOk(wartość) po Confirm/Enter
@@ -410,10 +452,14 @@ async function refresh() {
   let s;
   try { s = await apiGet('api/status'); } catch (e) { return; }
   lastStatus = s;
+  if (s.device && $('logoName').textContent !== s.device) $('logoName').textContent = s.device;   // Device Name z provisioningu
+  // Aktywny zmieniony poza tym GUI („ustaw na wszystkich” z innej lampy, przejście z programu osieroconego)
+  // — bez tego lista i activeId zostają stare, a Apply wysłałby z powrotem poprzedni program
+  if (activeId && s.active_id !== activeId) loadPrograms();
   $('power').textContent = s.power_pct.toFixed(1) + '%';
   const m = $('mode');
   m.textContent = s.mode.toUpperCase() + (s.ramp ? ' ↗' : '');
-  $('activeName').textContent = s.active_name;
+  $('activeName').textContent = s.active_name + (s.active_orphan ? ' (deleted elsewhere)' : '');
   const f = $('fan');
   f.textContent = s.fan_on ? s.fan_pct + '%' : 'OFF';
   $('clock').textContent = s.time_valid ? s.time.substring(11, 16) : 'no time';
@@ -474,12 +520,15 @@ async function loadPrograms() {
     ctrl.className = 'prog-ctrl';
     row.appendChild(ctrl);
     if (p.factory) ctrl.insertAdjacentHTML('beforeend', '<span class="badge cooling">factory</span>');
-    if (p.active) {
+    if (p.active && p.orphan) {
+      // Skasowany na innej lampie — zostaje do przełączenia na inny program
+      ctrl.insertAdjacentHTML('beforeend', '<span class="badge alarm" title="Deleted on another lamp — kept until another program is activated">orphan</span>');
+    } else if (p.active) {
       ctrl.insertAdjacentHTML('beforeend', '<span class="badge idle">active</span>');
     } else {
       const b = document.createElement('button');
       b.className = 'primary'; b.textContent = 'Activate';
-      b.onclick = () => activate(p);
+      b.onclick = () => onlinePeers().length ? askActivate(p) : activate(p);
       ctrl.appendChild(b);
     }
     const e = document.createElement('button');
@@ -496,8 +545,9 @@ async function loadPrograms() {
     if (!p.factory) {
       const d = document.createElement('button');
       d.className = 'danger'; d.textContent = '✕';
-      d.disabled = p.active;
-      d.title = p.active ? 'Active program cannot be deleted' : 'Delete';
+      const elsewhere = (p.active_on || []).join(', ');
+      d.disabled = p.active || !!elsewhere;
+      d.title = p.active ? 'Active program cannot be deleted' : (elsewhere ? 'Active on ' + elsewhere : 'Delete');
       d.onclick = () => showConfirm('Delete program', '"' + p.name + '" will be removed from the library.', 'warn', () => del(p));
       ctrl.appendChild(d);
     }
@@ -516,6 +566,19 @@ async function activate(p) {
     await loadPrograms(); refresh();
   } catch (e) { showAlert('Error', e.message, 'err'); }
 }
+function askActivate(p) {
+  showChoice('Activate program', '"' + p.name + '" — on this lamp only, or on all lamps?', 'info', [
+    { label: 'This lamp', fn: () => activate(p) },
+    { label: 'All lamps', cls: 'primary', fn: () => activateAll(p.id, p.name) }
+  ]);
+}
+async function activateAll(id, name) {
+  try {
+    const j = await apiPost('api/program-activate-all', { id });
+    showAlert('Activated', name + ' — this lamp' + (j.lamps ? ' + ' + j.lamps + ' other' : ''), 'ok');
+    await loadPrograms(); refresh(); setTimeout(loadGroup, 1500);
+  } catch (e) { showAlert('Error', e.message, 'err'); }
+}
 async function rename(p, name) {
   if (!name || name === p.name) return;
   try {
@@ -532,6 +595,71 @@ async function del(p) {
     loadPrograms();
   } catch (e) { showAlert('Error', e.message, 'err'); }
 }
+
+// ── Lamps (ESP-NOW) ──────────────────────────────────────────────────────
+let group = null, groupSig = '';
+const onlinePeers = () => group ? group.lamps.filter(l => l.online) : [];
+const TIME_Q = ['no time', 'RTC', 'NTP'];
+
+// sync: null = ta lampa (bez ikony), true = ✓, false = !; info → podpowiedź (IP, czas, FW, stan)
+function lampRow(name, self, sync, info, prog) {
+  const row = document.createElement('div');
+  row.className = 'prog-row lamp-row';
+  const n = document.createElement('span');
+  n.className = 'prog-name';
+  n.title = info;
+  const ic = document.createElement('span');
+  ic.className = 'lamp-sync' + (sync === null ? '' : (sync ? ' ok' : ' bad'));
+  ic.textContent = sync === null ? '' : (sync ? '✓' : '!');
+  n.appendChild(ic);
+  const nm = document.createElement('span');
+  if (self) nm.className = 'lamp-self';
+  nm.textContent = name;
+  n.appendChild(nm);
+  row.appendChild(n);
+  const ctrl = document.createElement('div');
+  ctrl.className = 'prog-ctrl';
+  const pg = document.createElement('span');
+  pg.className = 'lamp-prog'; pg.textContent = prog;
+  ctrl.appendChild(pg);
+  row.appendChild(ctrl);
+  return row;
+}
+
+async function loadGroup() {
+  let g;
+  try { g = await apiGet('api/group'); } catch (e) { return; }
+  group = g;
+  const list = $('groupList');
+  list.innerHTML = '';
+  const st = lastStatus;
+  const syncing = g.self.fetching || g.self.fetch_queue;
+  list.appendChild(lampRow(g.self.name, true, null, 'This lamp' + (syncing ? ' · syncing' : ''),
+    st ? st.active_name : ''));
+  g.lamps.forEach(l => {
+    const prog = l.active_name + (l.active_orphan ? ' (orphan)' : '') + (l.mode !== 'program' ? ' · ' + l.mode : '');
+    const state = !l.online ? 'offline, last seen ' + Math.round(l.last_seen_s / 60) + ' min ago'
+                            : (l.in_sync ? 'in sync' : 'syncing');
+    list.appendChild(lampRow(l.name, false, l.online && l.in_sync,
+      l.ip + ' · ' + TIME_Q[l.time_q] + ' · FW ' + l.fw + ' · ' + state, prog));
+  });
+  if (!g.lamps.length) list.insertAdjacentHTML('beforeend', '<div class="prog-meta">No other lamps heard yet.</div>');
+  const curId = lastStatus ? lastStatus.active_id : activeId;
+  const differ = onlinePeers().some(l => l.active_id !== curId);
+  $('btnAllActive').style.display = differ ? '' : 'none';
+  $('groupMeta').textContent = g.self.enabled
+    ? 'ESP-NOW ch ' + g.self.channel + ' · ' + g.self.mac + ' · rx ' + g.self.rx_ok + ' (rejected ' + g.self.rx_bad + ') · tx fail ' + g.self.tx_fail
+    : 'ESP-NOW disabled (no WiFi password)';
+  // Program pobrany / skasowany (tombstone z innej lampy) / aktywny zmieniony → odśwież listę programów.
+  // Własny skrót katalogu, bo in_sync wraca na true w ułamku sekundy i odpytywanie co 5 s go przegapia
+  const sig = JSON.stringify([g.self.catalog, g.self.fetching, g.self.fetch_queue, g.lamps.map(l => [l.active_id, l.in_sync, l.online])]);
+  if (sig !== groupSig) { const first = !groupSig; groupSig = sig; if (!first) loadPrograms(); }
+}
+
+$('btnAllActive').onclick = () => {
+  const name = lastStatus ? lastStatus.active_name : '';
+  showConfirm('Apply to all lamps', '"' + name + '" will become active on all lamps online.', 'info', () => activateAll(lastStatus ? lastStatus.active_id : activeId, name));
+};
 
 // ── Edytor (port docs/curve_editor_linear.html) ──────────────────────────
 // v w % mocy kanału (0–100, 2 miejsca); w API setne procenta.
@@ -993,7 +1121,9 @@ $('btnLogout').addEventListener('click', async () => {
   window.location.href = 'login';
 });
 
-refresh().then(loadPrograms).catch(() => {});
+refresh().then(loadPrograms).then(loadGroup).catch(() => {});
+const GROUP_POLL_MS = 5000;
+setInterval(loadGroup, GROUP_POLL_MS);
 // Odpytywanie: co 0,5 s w trakcie rampy i w trybie ręcznym (wartości się zmieniają), inaczej co 2 s
 const POLL_FAST_MS = 500, POLL_SLOW_MS = 2000;
 async function pollLoop() {

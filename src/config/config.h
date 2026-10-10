@@ -16,7 +16,7 @@ extern const IPAddress TRUSTED_PROXY_IP;
 
 // ================= FIRMWARE =================
 #define FW_NAME     "RL90 Lamp"
-#define FW_VERSION  "0.1.0"
+#define FW_VERSION  "0.2.0"
 
 // ================= SECURITY CONSTANTS =================
 const unsigned long SESSION_TIMEOUT_MS      = 1800000;

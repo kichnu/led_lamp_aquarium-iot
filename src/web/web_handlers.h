@@ -16,11 +16,13 @@
 //   POST /api/program-save       name (opcj. — brak = „Program NNNN” z licznika), parent (hex, opcj.),
 //                                ch_a..ch_d "t:v,t:v,..." → nowy id i nazwa
 //   POST /api/program-activate   id
-//   POST /api/program-delete     id (tombstone; aktywnego i fabrycznego nie można)
+//   POST /api/program-activate-all  id → lokalnie + ESP-NOW do lamp online („ustaw na wszystkich”)
+//   POST /api/program-delete     id (tombstone; aktywnego tu ani na innej lampie i fabrycznego nie można)
 //   POST /api/program-rename     id, name → nowy id (kopia + kasowanie starego; fabrycznego nie można)
 //   POST /api/manual-enter       mode=test|night
 //   POST /api/manual-set         ch_a..ch_d (setne %)
 //   POST /api/manual-exit
+//   GET  /api/group              ta lampa (MAC, kanał, stan sync) + lampy z heartbeatów ESP-NOW
 //   GET  /api/config             LAMP_CONFIG + CHANNEL_CONFIG
 //   POST /api/config             pola opcjonalne: ramp_s, fan_on_pct, fan_off_pct,
 //                                night_a..d, pf_a..d (‱), gamma_a..d, min_duty_a..d, label_a..d
