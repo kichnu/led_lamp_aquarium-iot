@@ -15,9 +15,10 @@
 //  I2C SDA         D6  GPIO21  ┤        ├ D7  GPIO20  I2C SCL
 //                       └───────────────┘
 //
-// A–D i FAN: bezpośrednio z GPIO przez 1 kΩ do padów lampy (wejście PWM Hi7001).
-// Wejście Hi7001 wiszące = 100 % (wewnętrzny pull-up) — ~1 s błysku przy starcie
-// akceptowany, bez pull-downów (USTALENIA.md).
+// A–D i FAN: bezpośrednio z GPIO do padów lampy (wejście PWM Hi7001), HIGH = ON w obu wersjach.
+// Biała: A–D i FAN przez 1 kΩ; wejście wiszące = 100 % (wewnętrzny pull-up) — ~1 s błysku
+// przy starcie akceptowany. Czarna: pull-down na Hi7001 (C 500 Ω, A/B/D 1 kΩ), wiszące = OFF;
+// A–D bez rezystora szeregowego, FAN przez 1 kΩ. Ten sam firmware (RL90_HANDOFF.md §3.1).
 // GPIO2 = strapping (musi być 1 przy starcie) — tylko pull-up, nigdy pull-down.
 // ============================================================
 

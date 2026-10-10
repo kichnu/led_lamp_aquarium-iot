@@ -60,10 +60,11 @@ Provisioning: hold GPIO10 button 5 s at boot → AP "RL90-LAMP-SETUP" / "setup12
 
 ## Key Decisions (summary — details in USTALENIA.md)
 
-- Pinout (XIAO C3): PWM A–D = GPIO3–6 (1 kΩ series, direct drive), FAN = GPIO7, I2C SDA 21 / SCL 20
-  (DS3231 0x68 + FRAM 0x50), DS18B20 reserve = GPIO2, provisioning button = GPIO10.
+- Pinout (XIAO C3): PWM A–D = GPIO3–6 (direct drive; white lamp 1 kΩ series, black lamp none), FAN = GPIO7
+  (1 kΩ), I2C SDA 21 / SCL 20 (DS3231 0x68 + FRAM 0x50), DS18B20 reserve = GPIO2, provisioning button = GPIO10.
 - LEDC 14 bit, 100 % = 2^14. Floating Hi7001 PWM input = 100 % (internal pull-up) → ~1 s full-brightness flash at
-  boot is accepted (same as the original controller); no pull-downs.
+  boot is accepted (same as the original controller); no pull-downs. Black lamp has external pull-downs on Hi7001
+  (C 500 Ω, A/B/D 1 kΩ) → floating = OFF; polarity unchanged, same firmware, no `#if` (HANDOFF §3.1).
 - Daily restart kept (~00:00–01:00, channels at 0), with `gpio_hold_en` LOW on A–D to avoid a night flash —
   verified on final hardware/firmware via OTA (no more `pwm_test/` testing).
 - Watchdog: `enableLoopWDT()`, `esp_task_wdt_reset()` in `ArduinoOTA.onProgress()`, 5 s timeout.

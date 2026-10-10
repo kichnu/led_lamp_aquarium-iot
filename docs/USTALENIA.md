@@ -1,6 +1,6 @@
 # RL90 — ustalone i do ustalenia przed kodowaniem
 
-Stan na 2026-09-24. Etap 1 zaimplementowany w `src/` (build OK), nietestowany na sprzęcie. Zbiorczy przegląd; szczegóły i uzasadnienia w `RL90_HANDOFF.md` (sekcje w nawiasach)
+Stan na 2026-10-09. Etap 1 zaimplementowany w `src/` (build OK), nietestowany na sprzęcie. Zbiorczy przegląd; szczegóły i uzasadnienia w `RL90_HANDOFF.md` (sekcje w nawiasach)
 i `CURVE_EDITOR_IMPLEMENTATION.md`.
 
 ---
@@ -10,6 +10,9 @@ i `CURVE_EDITOR_IMPLEMENTATION.md`.
 ### Sprzęt / platforma
 - Seeed XIAO ESP32-C3. A–D i FAN sterowane bezpośrednio z GPIO przez 1 kΩ, bez buforów. FAN ma 3,3 V, 2N7002
   niepotrzebny (§3, §4 #1).
+- Wersja czarna lampy (2026-10-09): pull-down na pinie 2 Hi7001 (C 500 Ω, A/B/D 1 kΩ) → linia wisząca = OFF,
+  brak błysku przy starcie/resecie. A–D z ESP bez rezystora szeregowego (z 1 kΩ kanał C by się nie zapalał), FAN
+  przez 1 kΩ. Polaryzacja bez zmian — jeden firmware dla obu lamp, bez `#if` (§3.1).
 - Pinout (§11): PWM A–D = GPIO3–6 (przetestowane), FAN = GPIO7, I2C SDA 21 / SCL 20, DS18B20 (rezerwa) = GPIO2,
   przycisk provisioning = GPIO10, GPIO8/9 wolne.
 - FRAM I2C 32 KB (FM24W256 / MB85RC256V) pod 0x50–0x53 (nie 0x57), DS3231 0x68 na tej samej magistrali (§10).

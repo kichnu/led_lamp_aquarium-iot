@@ -42,7 +42,8 @@ Ustalenia architektoniczne po testach: sekcje 8–13.
 | D | 1× Hi7001, dławik 470: jeden z G / W / M |
 | FAN | tranzystor low-side, wentylator 2-przewodowy (obroty regulowane PWM w oryginalnej aplikacji) |
 
-- Linie A–D idą **0 Ω** bezpośrednio na pin 2 (PWM) Hi7001. Nie ma filtrów RC.
+- Linie A–D idą na pin 2 (PWM) Hi7001 przez **100 Ω** szeregowo (obie wersje, biała i czarna).
+  Nie ma filtrów RC. W wersji czarnej dodatkowo pull-down na pinie 2 — patrz §3.1.
 
 ### 1.3 Zachowanie linii sterujących (pomiar)
 - Moduł odłączony, linie wiszą: **wszystkie kanały LED 100%, wentylator włączony**.
@@ -92,6 +93,20 @@ Ustalenia architektoniczne po testach: sekcje 8–13.
   pull-downów** — oryginalny sterownik zachowuje się tak samo przy włączeniu zasilania. (Gdyby kiedyś miało być
   ciemno od startu: pull-down R_pd < 0,18 · R_pu, warunek 5,2 · R_pd/(R_pd + R_pu) < 0,8 V — wymaga pomiaru R_pu.)
   Problem błysku przy **planowym restarcie dobowym** rozwiązywany osobno przez `gpio_hold` (§15).
+
+### 3.1 Wersja czarna lampy (2026-10-09)
+
+Druga lampa (czarna) różni się tylko zewnętrznym pull-downem na pinie 2 każdego Hi7001 (za rezystorem 100 Ω):
+**500 Ω w kanale C, 1 kΩ w A, B, D**. Pull-down wygrywa z wewnętrznym pull-upem — linia wisząca = **OFF**.
+
+- Polaryzacja bez zmian (HIGH = ON), więc **ten sam firmware** co dla białej lampy, bez `#if`. Różnica tylko w stanie
+  high-Z (boot, reset, WDT): czarna jest ciemna, biała daje ~1 s błysku. `gpio_hold` w czarnej zbędny, ale nieszkodliwy.
+- A–D z ESP **bezpośrednio, bez rezystora szeregowego** (1 kΩ usunięte). Dzielnik 100 Ω / R_pd przy HIGH:
+  C 3,3 · 500/600 ≈ 2,75 V, A/B/D ≈ 3,0 V (V_H = 1,4 V). Prąd z GPIO tylko w fazie HIGH: C ≈ 5,5 mA, reszta ≈ 3 mA.
+- **Nie wracać do 1 kΩ szeregowo w czarnej:** w kanale C dzielnik dałby 3,3 · 500/1600 ≈ 1,0 V < V_H — kanał nie
+  zapali się.
+- FAN bez zmian (1 kΩ szeregowo, bez pull-downu).
+- Biała lampa na razie po staremu (1 kΩ szeregowo na A–D i FAN).
 
 ---
 
@@ -286,7 +301,8 @@ Ustalone (użytkownik chce jeszcze „przespać się" ze szczegółami, więc tr
 
 
 - I2C: DS3231 (0x68) + FRAM (0x50), 400 kHz, kable krótkie, pull-up 4,7 kΩ do 3V3 (DS3231 modułowy często ma własne).
-- PWM A–D i FAN: przez 1 kΩ szeregowo do padów lampy.
+- PWM A–D i FAN: przez 1 kΩ szeregowo do padów lampy. Wersja czarna: A–D bez rezystora szeregowego, FAN
+  przez 1 kΩ (§3.1).
 - **DS18B20 na GPIO2** (osobny pin, bo kabel do radiatora może być długi; nie na wspólnej magistrali I2C): pull-up
   4,7 kΩ do 3V3. GPIO2 jest pinem strapping i musi być 1 przy starcie; pull-up to zapewnia (NTC z dzielnikiem
   nie, mógłby dać stan niski). Nie stosować pull-downów na GPIO2.
