@@ -1,6 +1,6 @@
 # RL90 — ustalone i do ustalenia przed kodowaniem
 
-Stan na 2026-10-09. Etap 1 zaimplementowany w `src/` (build OK), nietestowany na sprzęcie. Zbiorczy przegląd; szczegóły i uzasadnienia w `RL90_HANDOFF.md` (sekcje w nawiasach)
+Stan na 2026-10-10. Etap 1 zaimplementowany w `src/` (build OK), nietestowany na sprzęcie. Zbiorczy przegląd; szczegóły i uzasadnienia w `RL90_HANDOFF.md` (sekcje w nawiasach)
 i `CURVE_EDITOR_IMPLEMENTATION.md`.
 
 ---
@@ -115,6 +115,13 @@ i `CURVE_EDITOR_IMPLEMENTATION.md`.
   (pola A–D w %, zapis przy włączonym Night Light od razu zmienia wyjście). Osobna karta Manual Control usunięta.
 - API: POST jako form-urlencoded (szkic w `CURVE_EDITOR_IMPLEMENTATION.md` §6).
 
+### ESP-NOW (2026-10-10) — plan w `ESPNOW_PLAN.md`
+- Klucz grupy do HMAC ramek wyliczany z hasła Wi-Fi (SHA-256 ze stałą), provisioning bez zmian. Zmiana hasła
+  Wi-Fi = ponowny provisioning obu lamp (i tak konieczny).
+- Jeden punkt dostępowy — kanał ESP-NOW = kanał połączenia Wi-Fi, bez przypinania BSSID / stałego kanału.
+- „Ustaw na wszystkich” działa od razu: każda lampa (po pobraniu brakującego programu) przełącza się zwykłą
+  rampą, bez potwierdzania na pozostałych lampach.
+
 ---
 
 ## Do ustalenia przed kodowaniem szkieletu
@@ -129,8 +136,6 @@ Brak — wszystkie punkty blokujące szkielet są ustalone.
   diodami, strona kalibracji w GUI i opcja INA226 (bocznik 10 mΩ): `POWER_CALIBRATION.md`. Dotychczasowe prądy
   z pomiarów zgrubne; zasilacz nie ograniczał prądu.
 - Blokada PIN edycji GUI (jak w termostacie) — czy potrzebna; slot w FRAM zarezerwowany.
-- Szczegóły synchronizacji ESP-NOW (§9.4) — kolejny etap; plan i pytania otwarte (klucz grupy, kanał/AP,
-  „ustaw na wszystkich”): `ESPNOW_PLAN.md`.
 - Sprzęt: zakup FRAM; pomiary #3–#9 (mapowanie A/B/D → G/W/M, prądy, 62 vs 90 W, próg PWM, wentylator, test
   termiczny); #2 (R_pu) już opcjonalny; weryfikacja przetwornicy; prąd wsteczny 5V↔USB w XIAO C3.
 - Piny FAN, I2C, DS18B20, przycisk, `gpio_hold` — nietestowane; testy już tylko na finalnym sprzęcie i kodzie

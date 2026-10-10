@@ -39,8 +39,8 @@ Rzeczy, które mogą coś zmienić:
 5. GUI: widok grupy, przycisk „ustaw na wszystkich”, blokada usuwania programu aktywnego na innej lampie, status
    „osierocony” (program aktywny na lampie, choć został już usunięty).
 
-## Do ustalenia przed kodowaniem
+## Ustalone (2026-10-10)
 
-- Skąd klucz grupy: z hasła Wi-Fi czy osobne pole w provisioningu?
-- Jeden punkt dostępowy czy kilka (kanał ESP-NOW)?
-- Czy „ustaw na wszystkich” aktywuje program od razu, czy po potwierdzeniu na każdej lampie?
+- Klucz grupy: z hasła Wi-Fi (SHA-256 ze stałą), provisioning bez zmian.
+- Jeden punkt dostępowy — kanał ESP-NOW wynika z połączenia Wi-Fi.
+- „Ustaw na wszystkich” aktywuje program od razu, zwykłą rampą, bez potwierdzania na każdej lampie.
